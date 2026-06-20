@@ -47,7 +47,9 @@ Decisions (2026-06-20):
 - [ ] Host tags (owner, environment, criticality)
 
 ## Phase 4 — Pro features
-- [ ] RBAC, user management, MFA, audit log, API tokens
+- [x] RBAC: users + roles (admin/viewer), user management, role-gated actions, audit log, API tokens
+- [ ] MFA / TOTP (2FA) — not yet
+- [ ] Per-user password change UI; finer-grained roles
 - [ ] Dokploy actions from RRM (delete/redeploy service) — needs Dokploy API token
 - [x] Backup success monitoring (Proxmox vzdump jobs, last-OK + failure highlighting)
 - [x] SSL cert expiry monitoring (per HTTPS service, colour-coded)
