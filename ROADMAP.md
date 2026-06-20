@@ -52,7 +52,8 @@ Decisions (2026-06-20):
 - [x] Backup success monitoring (Proxmox vzdump jobs, last-OK + failure highlighting)
 - [x] SSL cert expiry monitoring (per HTTPS service, colour-coded)
 - [ ] Domain registration expiry (whois) — not yet
-- [ ] Grafana / DB integrations
+- [x] Native metrics page (CPU/RAM/Disk time-series charts from history) + Grafana deep-link
+- [ ] Full Grafana embedding (needs enabling allow_embedding+anonymous on Grafana — security decision + admin creds)
 - [x] AI analysis: "chat with infrastructure" (grounded in metrics/logs/alerts via LiteLLM gemini-flash)
 - [ ] AI: scheduled incident summaries, ticket suggestions, deeper Loki/Prometheus tool-calling
 
