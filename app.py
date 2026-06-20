@@ -1430,6 +1430,95 @@ def get_cluster_resources():
     cache.set('cluster_res', out)
     return out
 
+# ─── ASSET INVENTORY (OS / Python / packages per LXC) ──────────
+# Collected via the Proxmox host (`pct exec`) so no agent change is needed.
+# Enables zero-day triage: "which CT runs package X (version Y)?".
+
+_INV_SCRIPT = (
+    'echo "###OS"; grep -E "^(PRETTY_NAME|VERSION_ID|ID)=" /etc/os-release 2>/dev/null; '
+    'echo "###PY"; python3 --version 2>&1; '
+    'echo "###KERNEL"; uname -r; '
+    'echo "###PKGS"; dpkg-query -W 2>/dev/null'
+)
+
+def _prox_exec(vmid, cmd, timeout=40):
+    """Run a command inside an LXC via the Proxmox host (pct exec)."""
+    ssh = _paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(_paramiko.AutoAddPolicy())
+    ssh.connect(PROXMOX_HOST, port=22, username='root', password=PROXMOX_PASS,
+                timeout=10, look_for_keys=False, allow_agent=False)
+    try:
+        _, o, e = ssh.exec_command(f"pct exec {int(vmid)} -- sh -c '{cmd}'", timeout=timeout)
+        return o.read().decode('utf-8', 'replace') + e.read().decode('utf-8', 'replace')
+    finally:
+        ssh.close()
+
+def _inv_ensure_table():
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('''CREATE TABLE IF NOT EXISTS inventory (
+        host_key TEXT PRIMARY KEY, vmid INTEGER, os TEXT, version_id TEXT,
+        python TEXT, kernel TEXT, pkg_count INTEGER, packages_json TEXT, scanned_at INTEGER)''')
+    conn.commit(); conn.close()
+
+def _parse_inventory(raw):
+    section = None
+    info = {'os': '', 'version_id': '', 'distro': '', 'python': '', 'kernel': '', 'packages': {}}
+    for line in raw.splitlines():
+        if line.startswith('###'):
+            section = line[3:]; continue
+        if section == 'OS':
+            if line.startswith('PRETTY_NAME='): info['os'] = line.split('=', 1)[1].strip().strip('"')
+            elif line.startswith('VERSION_ID='): info['version_id'] = line.split('=', 1)[1].strip().strip('"')
+            elif line.startswith('ID='): info['distro'] = line.split('=', 1)[1].strip().strip('"')
+        elif section == 'PY' and line.strip():
+            info['python'] = line.replace('Python', '').strip() or info['python']
+        elif section == 'KERNEL' and line.strip():
+            info['kernel'] = line.strip()
+        elif section == 'PKGS' and line.strip():
+            parts = line.split('\t')
+            if len(parts) >= 2:
+                info['packages'][parts[0].split(':')[0]] = parts[1].strip()
+    info['pkg_count'] = len(info['packages'])
+    return info
+
+def scan_host_inventory(host_key):
+    h = STATIC_HOSTS.get(host_key)
+    vmid = h[4] if h else None
+    if not vmid:
+        live = cache.get('live')
+        hobj = next((x for x in (live or {}).get('hosts', []) if x['key'] == host_key), None) if live else None
+        vmid = hobj.get('ct_id') if hobj else None
+    if not vmid:
+        return {'ok': False, 'error': 'Kein LXC / keine VMID'}
+    if not PROXMOX_PASS:
+        return {'ok': False, 'error': 'PROXMOX_PASS nicht gesetzt'}
+    try:
+        inv = _parse_inventory(_prox_exec(vmid, _INV_SCRIPT, timeout=45))
+        _inv_ensure_table()
+        conn = sqlite3.connect(AUDIT_DB)
+        conn.execute('''INSERT INTO inventory
+            (host_key,vmid,os,version_id,python,kernel,pkg_count,packages_json,scanned_at)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(host_key) DO UPDATE SET vmid=excluded.vmid, os=excluded.os,
+            version_id=excluded.version_id, python=excluded.python, kernel=excluded.kernel,
+            pkg_count=excluded.pkg_count, packages_json=excluded.packages_json,
+            scanned_at=excluded.scanned_at''',
+            (host_key, vmid, inv['os'], inv['version_id'], inv['python'], inv['kernel'],
+             inv['pkg_count'], json.dumps(inv['packages']), int(time.time())))
+        conn.commit(); conn.close()
+        inv.update({'ok': True, 'host_key': host_key, 'vmid': vmid, 'scanned_at': int(time.time())})
+        return inv
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+def _inv_all_summary():
+    _inv_ensure_table()
+    conn = sqlite3.connect(AUDIT_DB)
+    rows = conn.execute('SELECT host_key,vmid,os,version_id,python,kernel,pkg_count,scanned_at FROM inventory').fetchall()
+    conn.close()
+    return [{'host_key': r[0], 'vmid': r[1], 'os': r[2], 'version_id': r[3],
+             'python': r[4], 'kernel': r[5], 'pkg_count': r[6], 'scanned_at': r[7]} for r in rows]
+
 # ─── CHECKS ───────────────────────────────────
 
 def _tcp(host, port, timeout=3):
@@ -1913,6 +2002,72 @@ def api_audit():
         return jsonify([{'ts': r[0], 'user': r[1], 'action': r[2], 'host': r[3], 'detail': r[4]} for r in rows])
     except Exception:
         return jsonify([])
+
+@app.route('/api/inventory')
+@login_required
+def api_inventory():
+    return jsonify(_inv_all_summary())
+
+@app.route('/api/inventory/search')
+@login_required
+def api_inventory_search():
+    q = request.args.get('q', '').strip().lower()
+    if not q:
+        return jsonify([])
+    _inv_ensure_table()
+    conn = sqlite3.connect(AUDIT_DB)
+    rows = conn.execute('SELECT host_key,os,packages_json FROM inventory').fetchall()
+    conn.close()
+    results = []
+    for host_key, os_name, pj in rows:
+        try:
+            pkgs = json.loads(pj or '{}')
+        except Exception:
+            pkgs = {}
+        for name, ver in pkgs.items():
+            if q in name.lower():
+                results.append({'host_key': host_key, 'os': os_name, 'package': name, 'version': ver})
+    results.sort(key=lambda x: (x['package'], x['host_key']))
+    return jsonify(results[:500])
+
+@app.route('/api/inventory/<host_key>')
+@login_required
+def api_inventory_host(host_key):
+    _inv_ensure_table()
+    conn = sqlite3.connect(AUDIT_DB)
+    row = conn.execute('SELECT host_key,vmid,os,version_id,python,kernel,pkg_count,packages_json,scanned_at '
+                       'FROM inventory WHERE host_key=?', (host_key,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'host_key': host_key, 'scanned': False, 'packages': {}})
+    try:
+        pkgs = json.loads(row[7] or '{}')
+    except Exception:
+        pkgs = {}
+    return jsonify({'host_key': row[0], 'vmid': row[1], 'os': row[2], 'version_id': row[3],
+                    'python': row[4], 'kernel': row[5], 'pkg_count': row[6],
+                    'packages': pkgs, 'scanned_at': row[8], 'scanned': True})
+
+@app.route('/api/inventory/<host_key>/scan', methods=['POST'])
+@login_required
+def api_inventory_scan(host_key):
+    _audit(request.remote_addr, 'inv_scan', host_key, '')
+    return jsonify(scan_host_inventory(host_key))
+
+@app.route('/api/inventory/scan-all', methods=['POST'])
+@login_required
+def api_inventory_scan_all():
+    def _bg():
+        live = cache.get('live') or {}
+        for h in live.get('hosts', []):
+            if h.get('ct_id'):
+                try:
+                    scan_host_inventory(h['key'])
+                except Exception:
+                    pass
+    threading.Thread(target=_bg, daemon=True).start()
+    _audit(request.remote_addr, 'inv_scan_all', '', '')
+    return jsonify({'ok': True, 'msg': 'Scan aller LXC gestartet (Hintergrund)'})
 
 @app.route('/api/nanoclaw/events')
 @login_required
