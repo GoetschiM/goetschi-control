@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getJSON } from '../api.js'
 
+function toEpoch(ts) {
+  if (typeof ts === 'number') return ts
+  if (typeof ts === 'string') { const p = Date.parse(ts); return isNaN(p) ? 0 : Math.floor(p / 1000) }
+  return 0
+}
+
 export default function Events() {
   const [nc, setNc] = useState([])
   const [audit, setAudit] = useState([])
@@ -18,12 +24,12 @@ export default function Events() {
 
   const items = useMemo(() => {
     const ev = nc.map(e => ({
-      ts: e.ts, kind: e.action === 'automation' ? 'automation' : 'engine',
+      ts: toEpoch(e.ts), kind: e.action === 'automation' ? 'automation' : 'engine',
       sev: e.severity || 'info', host: e.host, action: e.action,
       text: `${e.detail || ''}${e.result ? ' → ' + e.result : ''}`,
     }))
     const au = audit.map(a => ({
-      ts: a.ts, kind: 'audit', sev: 'info', host: a.host,
+      ts: toEpoch(a.ts), kind: 'audit', sev: 'info', host: a.host,
       action: a.action, text: `${a.user || ''} · ${a.detail || ''}`,
     }))
     let all = [...ev, ...au].sort((x, y) => (y.ts || 0) - (x.ts || 0))
