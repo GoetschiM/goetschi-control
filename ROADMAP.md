@@ -12,17 +12,18 @@ Decisions (2026-06-20):
 - [ ] Clean up stale images / instances
 
 ## Phase 1 — Frontend redesign (foundation + per-service pages)
-- [ ] Design system (layout grid, typography, color tokens, dark mode, mobile-first)
-- [ ] New navigation / information architecture; topology view
-- [ ] **Per-service / per-container detail page** (real-time metrics, logs, actions)
-- [ ] Animated live "flow" diagram
+- [x] Design system (layout grid, typography, color tokens, dark mode, mobile-first)
+- [x] New navigation / information architecture; topology view
+- [x] **Per-service / per-container detail page** (real-time metrics, logs, actions)
+- [x] Animated live "flow" diagram (tiered topology with animated connectors)
 - [ ] Configurable service dashboard: add/remove services manually + auto-discovered
-- [ ] Remove right-hand "LXC Status" panel (mobile space); fix PWA service-worker caching
+- [x] Remove right-hand "LXC Status" panel (gone in redesign); fix PWA service-worker caching
 
 ## Phase 2 — Remote management
-- [ ] Container start / reboot / stop / update from the UI
-- [ ] SSH / shell access (already has xterm terminal — harden)
-- [ ] Fix the CT "Diag" auth error (always fails today)
+- [x] Container restart from the UI (via gl-agent); host/agent restart actions
+- [ ] Container start / stop / update from the UI
+- [ ] SSH / shell access (xterm terminal — port from legacy)
+- [x] Fix the CT "Diag" auth error — now uses gl-agent /nanoclaw/diagnose, not SSH:22
 - [ ] Bulk actions across hosts
 - [ ] Add / remove monitored CT / device / service from the UI
 
