@@ -19,6 +19,14 @@ Decisions (2026-06-20):
 - [ ] Configurable service dashboard: add/remove services manually + auto-discovered
 - [x] Remove right-hand "LXC Status" panel (gone in redesign); fix PWA service-worker caching
 
+## Phase 1.5 — Settings & configuration (UI)
+- [ ] Settings page (backend already exposes /api/settings, /api/host_meta PATCH, /api/tokens)
+- [ ] Edit host metadata: display name, category, tags, notes, criticality, owner
+- [ ] Manage API tokens (create / revoke)
+- [ ] Alert thresholds + Telegram config (test button via /api/telegram/test)
+- [ ] Add / remove monitored hosts & services from the UI
+- [ ] Theme / layout preferences
+
 ## Phase 2 — Remote management
 - [x] Container restart from the UI (via gl-agent); host/agent restart actions
 - [ ] Container start / stop / update from the UI
