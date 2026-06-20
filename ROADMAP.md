@@ -20,17 +20,19 @@ Decisions (2026-06-20):
 - [x] Remove right-hand "LXC Status" panel (gone in redesign); fix PWA service-worker caching
 
 ## Phase 1.5 — Settings & configuration (UI)
-- [ ] Settings page (backend already exposes /api/settings, /api/host_meta PATCH, /api/tokens)
-- [ ] Edit host metadata: display name, category, tags, notes, criticality, owner
-- [ ] Manage API tokens (create / revoke)
-- [ ] Alert thresholds + Telegram config (test button via /api/telegram/test)
+- [x] Settings page (host metadata, tokens, config overview, audit log)
+- [x] Edit host metadata: display name, category, notes
+- [x] Manage API tokens (create / revoke)
+- [x] Telegram test button (via /api/telegram/test)
+- [ ] Edit host tags, criticality, owner
+- [ ] Alert thresholds config
 - [ ] Add / remove monitored hosts & services from the UI
 - [ ] Theme / layout preferences
 
 ## Phase 2 — Remote management
 - [x] Container restart from the UI (via gl-agent); host/agent restart actions
 - [ ] Container start / stop / update from the UI
-- [ ] SSH / shell access (xterm terminal — port from legacy)
+- [x] SSH / shell access — xterm terminal page, routed via Proxmox `pct enter` for LXC
 - [x] Fix the CT "Diag" auth error — now uses gl-agent /nanoclaw/diagnose, not SSH:22
 - [ ] Bulk actions across hosts
 - [ ] Add / remove monitored CT / device / service from the UI
