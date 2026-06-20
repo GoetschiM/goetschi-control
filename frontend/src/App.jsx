@@ -2,16 +2,15 @@ import { useState } from 'react'
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
 import Overview from './pages/Overview.jsx'
 import HostDetail from './pages/HostDetail.jsx'
+import ContainerDetail from './pages/ContainerDetail.jsx'
+import Topology from './pages/Topology.jsx'
+import Alerts from './pages/Alerts.jsx'
 
 const NAV = [
   { to: '/', ico: '▦', label: 'Übersicht', end: true },
   { to: '/topology', ico: '⤳', label: 'Topologie' },
   { to: '/alerts', ico: '◬', label: 'Alarme' },
 ]
-
-function Placeholder({ title }) {
-  return <div className="center-msg">{title} — kommt in einem der nächsten Schritte.</div>
-}
 
 export default function App() {
   const [navOpen, setNavOpen] = useState(false)
@@ -29,7 +28,7 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
-        <div className="foot">v0.1 · RRM redesign</div>
+        <div className="foot">v0.2 · RRM redesign</div>
       </aside>
       <div className="scrim" onClick={() => setNavOpen(false)} />
 
@@ -44,8 +43,9 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/host/:key" element={<HostDetail />} />
-            <Route path="/topology" element={<Placeholder title="Topologie" />} />
-            <Route path="/alerts" element={<Placeholder title="Alarme" />} />
+            <Route path="/host/:key/c/:name" element={<ContainerDetail />} />
+            <Route path="/topology" element={<Topology />} />
+            <Route path="/alerts" element={<Alerts />} />
           </Routes>
         </div>
       </div>
@@ -54,6 +54,7 @@ export default function App() {
 }
 
 function titleFor(path) {
+  if (path.includes('/c/')) return 'Container'
   if (path.startsWith('/host/')) return 'Service'
   if (path.startsWith('/topology')) return 'Topologie'
   if (path.startsWith('/alerts')) return 'Alarme'

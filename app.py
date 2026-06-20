@@ -869,24 +869,46 @@ def _nc_agent_restart(host_key, ip, container_name):
     except Exception as e:
         return False, str(e)
 
+def _nc_diagnose_ssh(ip, name, source='docker'):
+    """Legacy fallback: diagnose over SSH (port 22 is firewalled / root-login locked
+    on most LXCs, so this usually fails — kept only as a last resort)."""
+    if source == 'systemd':
+        cmd = f'journalctl -u "{name}" -n 80 --no-pager 2>/dev/null'
+    else:
+        cmd = f'docker logs --tail=80 "{name}" 2>&1'
+    out, err = _nc_ssh(ip, cmd, timeout=15)
+    logs = (out + '\n' + err).strip()
+    combined = logs.lower()
+    for pattern, label, advice in _NC_DIAG_PATTERNS:
+        if re.search(pattern, combined):
+            return {'label': label, 'advice': advice, 'pattern': pattern,
+                    'logs': logs[-1500:], 'ok': True}
+    return {'label': 'Unbekannt', 'advice': 'Kein bekanntes Fehlermuster. Logs manuell prüfen.',
+            'pattern': None, 'logs': logs[-1500:], 'ok': True}
+
 def nc_diagnose(ip, name, source='docker'):
-    """Fetch logs for a docker container or systemd unit and pattern-match failure cause."""
+    """Diagnose a container/unit. Primary path = the gl-agent's /nanoclaw/diagnose
+    endpoint (works without SSH); SSH is only a fallback. Fixes the perennial
+    "auth error" on CT diag, which was caused by direct SSH to a firewalled port 22."""
     try:
-        if source == 'systemd':
-            cmd = f'journalctl -u "{name}" -n 80 --no-pager 2>/dev/null'
-        else:
-            cmd = f'docker logs --tail=80 "{name}" 2>&1'
-        out, err = _nc_ssh(ip, cmd, timeout=15)
-        logs = (out + '\n' + err).strip()
-        combined = logs.lower()
-        for pattern, label, advice in _NC_DIAG_PATTERNS:
-            if re.search(pattern, combined):
-                return {'label': label, 'advice': advice, 'pattern': pattern,
-                        'logs': logs[-1500:], 'ok': True}
-        return {'label': 'Unbekannt', 'advice': 'Kein bekanntes Fehlermuster. Logs manuell prüfen.',
-                'pattern': None, 'logs': logs[-1500:], 'ok': True}
-    except Exception as e:
-        return {'label': 'Fehler', 'advice': str(e), 'pattern': None, 'logs': '', 'ok': False}
+        q = urllib.parse.urlencode({'container': name, 'source': source})
+        req = urllib.request.Request(f'http://{ip}:{AGENT_PORT}/nanoclaw/diagnose?{q}')
+        req.add_header('Authorization', f'Bearer {GL_AGENT_TOKEN}')
+        resp = json.loads(urllib.request.urlopen(req, timeout=12).read())
+        return {'label':   resp.get('label', 'Unbekannt'),
+                'advice':  resp.get('advice', ''),
+                'pattern': resp.get('pattern'),
+                'logs':    (resp.get('logs') or '')[-1500:],
+                'ok':      resp.get('ok', True),
+                'source':  'agent'}
+    except Exception as agent_err:
+        try:
+            r = _nc_diagnose_ssh(ip, name, source=source)
+            r['source'] = 'ssh'
+            return r
+        except Exception as ssh_err:
+            return {'label': 'Fehler', 'pattern': None, 'logs': '', 'ok': False,
+                    'advice': f'Agent nicht erreichbar ({agent_err}); SSH-Fallback fehlgeschlagen ({ssh_err}).'}
 
 def _nc_disk_cleanup(host_key, ip):
     try:

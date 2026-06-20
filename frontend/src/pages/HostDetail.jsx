@@ -7,6 +7,8 @@ export default function HostDetail() {
   const { key } = useParams()
   const hostKey = decodeURIComponent(key)
   const { data } = usePoll('/api/live', 5000)
+  const { data: agent } = usePoll(`/api/agent/${encodeURIComponent(hostKey)}`, 8000)
+  const { data: procData } = usePoll(`/api/processes/${encodeURIComponent(hostKey)}`, 10000)
   const host = (data?.hosts || []).find(h => h.key === hostKey)
 
   const [cpuHist, setCpuHist] = useState([])
@@ -24,8 +26,9 @@ export default function HostDetail() {
   }, [hostKey])
 
   async function action(path, label) {
+    if (!confirm(`${label}?`)) return
     setBusy(label)
-    try { await postJSON(path) ; alert(`${label}: ausgelöst`) }
+    try { const r = await postJSON(path); alert(r?.ok === false ? `${label} fehlgeschlagen: ${r.error || r.msg}` : `${label}: ausgelöst`) }
     catch (e) { alert(`${label} fehlgeschlagen: ${e.message}`) }
     finally { setBusy('') }
   }
@@ -33,6 +36,8 @@ export default function HostDetail() {
   if (!host) return <div className="center-msg">lädt Host …</div>
   const m = host.metrics || {}
   const a = host.agent || {}
+  const containers = agent?.docker?.containers || []
+  const procs = (procData?.procs || []).slice(0, 8)
 
   return (
     <>
@@ -70,6 +75,21 @@ export default function HostDetail() {
         </div>
 
         <div className="panel">
+          <h3>Docker · {containers.length}</h3>
+          {containers.length === 0 && <div className="muted">{agent ? 'keine' : 'lädt …'}</div>}
+          {containers.map((c, i) => {
+            const up = (c.status || '').toLowerCase().startsWith('up') || (c.status || '').toLowerCase().includes('running')
+            return (
+              <Link className="svc-row" key={i} to={`/host/${encodeURIComponent(hostKey)}/c/${encodeURIComponent(c.name)}`}>
+                <StatusDot status={up ? 'online' : 'offline'} />
+                <span>{c.name}</span>
+                <span className="port">{(c.image || '').split(':')[0].split('/').pop()}</span>
+              </Link>
+            )
+          })}
+        </div>
+
+        <div className="panel">
           <h3>Services {host.svc_online ?? 0}/{host.svc_total ?? 0}</h3>
           {(host.services || []).length === 0 && <div className="muted">keine</div>}
           {(host.services || []).map((s, i) => (
@@ -82,19 +102,30 @@ export default function HostDetail() {
         </div>
 
         <div className="panel">
+          <h3>Top-Prozesse</h3>
+          {procs.length === 0 && <div className="muted">{procData ? '—' : 'lädt …'}</div>}
+          {procs.map((p, i) => (
+            <div className="svc-row" key={i}>
+              <span className="mono" style={{ width: 46 }}>{p.cpu}%</span>
+              <span className="mono" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.cmd}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="panel">
           <h3>Aktionen</h3>
           <div className="actions">
             <button className="btn" disabled={!!busy}
               onClick={() => action(`/api/agent/${encodeURIComponent(hostKey)}/restart`, 'Agent-Neustart')}>
-              {busy === 'Agent-Neustart' ? '…' : 'Agent neustarten'}
+              {busy === 'Agent-Neustart' ? '…' : '↻ Agent neustarten'}
             </button>
             <button className="btn" disabled={!!busy}
               onClick={() => action(`/api/restart/${encodeURIComponent(hostKey)}`, 'Host-Neustart')}>
-              {busy === 'Host-Neustart' ? '…' : 'Host neustarten'}
+              {busy === 'Host-Neustart' ? '…' : '⏻ Host neustarten'}
             </button>
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-            Weitere Aktionen (SSH, Update, Diag) folgen in Phase 2.
+            Container-Aktionen (Neustart/Diagnose) auf der jeweiligen Container-Seite. SSH-Terminal & Update folgen.
           </p>
         </div>
 
@@ -118,6 +149,6 @@ function normHist(d) {
 
 function normLogs(d) {
   if (!d) return []
-  const arr = Array.isArray(d) ? d : (d.logs || d.lines || [])
+  const arr = Array.isArray(d) ? d : (d.lines || d.logs || [])
   return arr.map(l => (typeof l === 'string' ? l : (l.msg || l.line || l.message || JSON.stringify(l)))).slice(0, 200)
 }
