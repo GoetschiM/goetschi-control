@@ -16,7 +16,9 @@ Decisions (2026-06-20):
 - [x] New navigation / information architecture; topology view
 - [x] **Per-service / per-container detail page** (real-time metrics, logs, actions)
 - [x] Animated live "flow" diagram (tiered topology with animated connectors)
-- [ ] Configurable service dashboard: add/remove services manually + auto-discovered
+- [x] Configurable service board (Homarr-style): open/add/remove/reorder tiles, auto-fill from discovered services
+- [x] Logs from systemd journal (Proxmox pct exec) — Loki/promtail pipeline is broken/empty
+- [ ] Fix the central log pipeline (promtail can't reach docker socket -> Loki empty)
 - [x] Remove right-hand "LXC Status" panel (gone in redesign); fix PWA service-worker caching
 
 ## Phase 1.5 — Settings & configuration (UI)
