@@ -2222,6 +2222,164 @@ def api_board_put():
     conn.commit(); conn.close()
     return jsonify({'ok': True, 'count': len(tiles)})
 
+# ─── AUTOMATIONS (event rules: when X then Y) ──
+def _auto_ensure():
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('''CREATE TABLE IF NOT EXISTS automations (
+        id TEXT PRIMARY KEY, name TEXT, scope_host TEXT, metric TEXT, op TEXT,
+        threshold TEXT, action TEXT, action_arg TEXT, enabled INTEGER DEFAULT 1,
+        cooldown_min INTEGER DEFAULT 30, last_fired INTEGER DEFAULT 0, created_at TEXT)''')
+    conn.commit(); conn.close()
+
+def _auto_list():
+    _auto_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.row_factory = sqlite3.Row
+    rows = [dict(r) for r in conn.execute('SELECT * FROM automations ORDER BY created_at DESC').fetchall()]
+    conn.close()
+    return rows
+
+def _auto_cond_met(rule, h):
+    m = h.get('metrics') or {}
+    metric = rule['metric']
+    if metric == 'status':
+        return h.get('status') == rule['threshold']
+    val = {'cpu': m.get('cpu'), 'ram': m.get('ram'), 'disk': m.get('disk_pct')}.get(metric)
+    if val is None:
+        return False
+    try:
+        thr = float(rule['threshold'])
+    except Exception:
+        return False
+    op = rule['op']
+    return (op == '>' and val > thr) or (op == '<' and val < thr) or (op == '==' and val == thr)
+
+def _auto_run_action(rule, h):
+    action, arg = rule['action'], rule.get('action_arg') or ''
+    hk, name = h['key'], h['name']
+    if action == 'telegram':
+        _tg_send(f"🤖 *Automation:* {rule['name']}\n*Host:* {name}\n{arg or 'Bedingung erfüllt'}")
+        return 'Telegram gesendet'
+    if action == 'lxc_reboot':
+        r = lxc_action(hk, 'reboot')
+        _tg_send(f"🤖 Automation {rule['name']}: CT {name} Reboot → {r.get('msg', r)}")
+        return f"Reboot: {r.get('msg', r.get('error'))}"
+    if action == 'restart_container':
+        r = container_action(hk, arg, 'restart')
+        _tg_send(f"🤖 Automation {rule['name']}: Container {arg}@{name} Neustart → {r.get('msg', r)}")
+        return f"Restart {arg}: {r.get('msg', r.get('error'))}"
+    if action == 'ai_diagnose':
+        try:
+            ans = _llm_chat([
+                {'role': 'system', 'content': 'Du bist Infra-Analyst. Antworte sehr knapp auf Deutsch: wahrscheinliche Ursache + 1 Empfehlung.'},
+                {'role': 'user', 'content': f'KONTEXT:\n{_build_ai_context(hk)}\n\nWarum ist die Bedingung "{rule["metric"]} {rule["op"]} {rule["threshold"]}" auf {name} erfüllt?'}],
+                max_tokens=1500)
+            _tg_send(f"🤖 *KI-Diagnose* {name} ({rule['name']}):\n{ans[:1000]}")
+            return f"KI: {ans[:160]}"
+        except Exception as e:
+            return f"KI-Fehler: {e}"
+    return 'unbekannte Aktion'
+
+def _automations_tick():
+    live = cache.get('live')
+    if not live:
+        return
+    rules = [r for r in _auto_list() if r.get('enabled')]
+    if not rules:
+        return
+    now = int(time.time())
+    hosts = live.get('hosts', [])
+    for r in rules:
+        if now - (r.get('last_fired') or 0) < (r.get('cooldown_min', 30) * 60):
+            continue
+        targets = [h for h in hosts if (not r['scope_host'] or h['key'] == r['scope_host'])]
+        fired_host = None
+        for h in targets:
+            if _auto_cond_met(r, h):
+                fired_host = h
+                break
+        if fired_host:
+            try:
+                result = _auto_run_action(r, fired_host)
+            except Exception as e:
+                result = f'Fehler: {e}'
+            conn = sqlite3.connect(AUDIT_DB)
+            conn.execute('UPDATE automations SET last_fired=? WHERE id=?', (now, r['id']))
+            conn.commit(); conn.close()
+            _nc_log(fired_host['key'], 'automation',
+                    f"{r['name']}: {r['metric']} {r['op']} {r['threshold']}", result, 'warn')
+
+def _automations_bg():
+    while True:
+        try:
+            _automations_tick()
+        except Exception as e:
+            print(f'[automations] {e}')
+        time.sleep(60)
+
+@app.route('/api/automations', methods=['GET'])
+@login_required
+def api_auto_list():
+    return jsonify(_auto_list())
+
+@app.route('/api/automations', methods=['POST'])
+@login_required
+def api_auto_create():
+    import secrets as _s
+    d = request.json or {}
+    if not d.get('name') or not d.get('action'):
+        return jsonify({'ok': False, 'error': 'name + action erforderlich'}), 400
+    _auto_ensure()
+    rid = _s.token_hex(5)
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('''INSERT INTO automations
+        (id,name,scope_host,metric,op,threshold,action,action_arg,enabled,cooldown_min,last_fired,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,0,?)''',
+        (rid, d['name'], d.get('scope_host', ''), d.get('metric', 'cpu'), d.get('op', '>'),
+         str(d.get('threshold', '90')), d['action'], d.get('action_arg', ''),
+         1 if d.get('enabled', True) else 0, int(d.get('cooldown_min', 30)),
+         time.strftime('%Y-%m-%dT%H:%M:%S')))
+    conn.commit(); conn.close()
+    _audit(request.remote_addr, 'auto_create', '', d['name'])
+    return jsonify({'ok': True, 'id': rid})
+
+@app.route('/api/automations/<rid>', methods=['PATCH'])
+@login_required
+def api_auto_patch(rid):
+    d = request.json or {}
+    _auto_ensure()
+    fields = [k for k in ('name', 'scope_host', 'metric', 'op', 'threshold', 'action', 'action_arg', 'enabled', 'cooldown_min') if k in d]
+    if not fields:
+        return jsonify({'ok': True})
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute(f"UPDATE automations SET {', '.join(f'{f}=?' for f in fields)} WHERE id=?",
+                 [(1 if d[f] else 0) if f == 'enabled' else d[f] for f in fields] + [rid])
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/automations/<rid>', methods=['DELETE'])
+@login_required
+def api_auto_delete(rid):
+    _auto_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('DELETE FROM automations WHERE id=?', (rid,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/automations/<rid>/test', methods=['POST'])
+@login_required
+def api_auto_test(rid):
+    rule = next((r for r in _auto_list() if r['id'] == rid), None)
+    if not rule:
+        return jsonify({'ok': False, 'error': 'nicht gefunden'}), 404
+    live = cache.get('live') or {}
+    hosts = live.get('hosts', [])
+    h = next((x for x in hosts if (not rule['scope_host'] or x['key'] == rule['scope_host'])), hosts[0] if hosts else None)
+    if not h:
+        return jsonify({'ok': False, 'error': 'kein Host'})
+    result = _auto_run_action(rule, h)
+    return jsonify({'ok': True, 'result': result, 'host': h['name']})
+
 @app.route('/api/processes/<host_key>')
 @login_required
 def api_processes(host_key):
@@ -2855,6 +3013,7 @@ if __name__ == '__main__':
     threading.Thread(target=_cron_bg, daemon=True).start()
     threading.Thread(target=_nanoclaw_bg, daemon=True).start()
     threading.Thread(target=_metrics_bg, daemon=True).start()
+    threading.Thread(target=_automations_bg, daemon=True).start()
     print('[Nanoclaw] Self-healing engine started')
     print('[Metrics] History storage started (60s interval)')
     if TELEGRAM_TOKEN:
