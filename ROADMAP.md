@@ -56,6 +56,11 @@ Decisions (2026-06-20):
 - [x] AI analysis: "chat with infrastructure" (grounded in metrics/logs/alerts via LiteLLM gemini-flash)
 - [ ] AI: scheduled incident summaries, ticket suggestions, deeper Loki/Prometheus tool-calling
 
+## Automations
+- [x] Event rule engine: "when X then Y" (metric/status conditions) with cooldown, 60s evaluator
+- [x] Actions: Telegram, AI-diagnose (LiteLLM), CT reboot, container restart
+- [ ] More triggers (backup failed, SSL expiry, log pattern) + chained actions + UI for cron tasks
+
 ## Smarter agents (cross-cutting)
 - [ ] gl-agent: versioning, auto-update, command channel, richer security/asset data
 - [ ] Nanoclaw: smarter self-healing + correlation
