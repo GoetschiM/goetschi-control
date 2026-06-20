@@ -47,8 +47,9 @@ Decisions (2026-06-20):
 ## Phase 4 — Pro features
 - [ ] RBAC, user management, MFA, audit log, API tokens
 - [ ] Dokploy actions from RRM (delete/redeploy service) — needs Dokploy API token
-- [ ] Backup success monitoring
-- [ ] SSL cert + domain expiry monitoring
+- [x] Backup success monitoring (Proxmox vzdump jobs, last-OK + failure highlighting)
+- [x] SSL cert expiry monitoring (per HTTPS service, colour-coded)
+- [ ] Domain registration expiry (whois) — not yet
 - [ ] Grafana / DB integrations
 - [x] AI analysis: "chat with infrastructure" (grounded in metrics/logs/alerts via LiteLLM gemini-flash)
 - [ ] AI: scheduled incident summaries, ticket suggestions, deeper Loki/Prometheus tool-calling
