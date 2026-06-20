@@ -30,11 +30,11 @@ Decisions (2026-06-20):
 - [ ] Theme / layout preferences
 
 ## Phase 2 — Remote management
-- [x] Container restart from the UI (via gl-agent); host/agent restart actions
-- [ ] Container start / stop / update from the UI
+- [x] Container start / stop / restart from the UI (via Proxmox pct exec, injection-guarded)
+- [ ] Container update (needs Dokploy/Coolify orchestrator integration — Phase 4)
 - [x] SSH / shell access — xterm terminal page, routed via Proxmox `pct enter` for LXC
 - [x] Fix the CT "Diag" auth error — now uses gl-agent /nanoclaw/diagnose, not SSH:22
-- [ ] Bulk actions across hosts
+- [x] Bulk actions (select containers → start/stop/restart; API supports multi-host)
 - [ ] Add / remove monitored CT / device / service from the UI
 
 ## Phase 3 — Asset & security transparency
