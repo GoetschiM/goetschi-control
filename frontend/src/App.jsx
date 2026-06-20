@@ -5,11 +5,14 @@ import HostDetail from './pages/HostDetail.jsx'
 import ContainerDetail from './pages/ContainerDetail.jsx'
 import Topology from './pages/Topology.jsx'
 import Alerts from './pages/Alerts.jsx'
+import Settings from './pages/Settings.jsx'
+import Terminal from './pages/Terminal.jsx'
 
 const NAV = [
   { to: '/', ico: '▦', label: 'Übersicht', end: true },
   { to: '/topology', ico: '⤳', label: 'Topologie' },
   { to: '/alerts', ico: '◬', label: 'Alarme' },
+  { to: '/settings', ico: '⚙', label: 'Einstellungen' },
 ]
 
 export default function App() {
@@ -44,8 +47,10 @@ export default function App() {
             <Route path="/" element={<Overview />} />
             <Route path="/host/:key" element={<HostDetail />} />
             <Route path="/host/:key/c/:name" element={<ContainerDetail />} />
+            <Route path="/host/:key/terminal" element={<Terminal />} />
             <Route path="/topology" element={<Topology />} />
             <Route path="/alerts" element={<Alerts />} />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </div>
       </div>
@@ -54,9 +59,11 @@ export default function App() {
 }
 
 function titleFor(path) {
+  if (path.endsWith('/terminal')) return 'Terminal'
   if (path.includes('/c/')) return 'Container'
   if (path.startsWith('/host/')) return 'Service'
   if (path.startsWith('/topology')) return 'Topologie'
   if (path.startsWith('/alerts')) return 'Alarme'
+  if (path.startsWith('/settings')) return 'Einstellungen'
   return 'Übersicht'
 }

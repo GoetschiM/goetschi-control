@@ -2294,14 +2294,24 @@ def ws_ssh_open(data):
     cols = data.get('cols', 220); rows = data.get('rows', 50)
     _audit(user, 'ssh_open', key, ip)
 
+    ctid = h[4]
     ssh_user, ssh_pass = SSH_OVERRIDES.get(key, (LXC_SSH_USER, LXC_SSH_PASS))
     try:
         ssh = _paramiko.SSHClient()
         ssh.set_missing_host_key_policy(_paramiko.AutoAddPolicy())
-        ssh.connect(ip, port=22, username=ssh_user, password=ssh_pass,
-                    timeout=8, look_for_keys=False, allow_agent=False)
-        chan = ssh.invoke_shell(term='xterm-256color', width=cols, height=rows)
-        chan.settimeout(0)
+        if ctid and PROXMOX_PASS:
+            # LXC port 22 is firewalled / root-login locked, so reach the container
+            # through the Proxmox host (proven path) and `pct enter` into it.
+            ssh.connect(PROXMOX_HOST, port=22, username='root', password=PROXMOX_PASS,
+                        timeout=8, look_for_keys=False, allow_agent=False)
+            chan = ssh.invoke_shell(term='xterm-256color', width=cols, height=rows)
+            chan.settimeout(0)
+            chan.send(f'pct enter {ctid}\n')
+        else:
+            ssh.connect(ip, port=22, username=ssh_user, password=ssh_pass,
+                        timeout=8, look_for_keys=False, allow_agent=False)
+            chan = ssh.invoke_shell(term='xterm-256color', width=cols, height=rows)
+            chan.settimeout(0)
         with _ssh_sessions_lk:
             _ssh_sessions[sid] = (ssh, chan)
 

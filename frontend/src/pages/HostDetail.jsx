@@ -115,6 +115,9 @@ export default function HostDetail() {
         <div className="panel">
           <h3>Aktionen</h3>
           <div className="actions">
+            {host.ct_id && (
+              <Link className="btn" to={`/host/${encodeURIComponent(hostKey)}/terminal`}>⌨ SSH-Terminal</Link>
+            )}
             <button className="btn" disabled={!!busy}
               onClick={() => action(`/api/agent/${encodeURIComponent(hostKey)}/restart`, 'Agent-Neustart')}>
               {busy === 'Agent-Neustart' ? '…' : '↻ Agent neustarten'}
@@ -125,7 +128,7 @@ export default function HostDetail() {
             </button>
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-            Container-Aktionen (Neustart/Diagnose) auf der jeweiligen Container-Seite. SSH-Terminal & Update folgen.
+            Container-Aktionen (Neustart/Diagnose) auf der jeweiligen Container-Seite.
           </p>
         </div>
 

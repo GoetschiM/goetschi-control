@@ -1,0 +1,126 @@
+import { useEffect, useState } from 'react'
+import { getJSON, postJSON, patchJSON, delJSON } from '../api.js'
+
+const CATEGORIES = ['infra', 'core', 'agent', 'ai', 'voice', 'trading', 'app', 'sonstige']
+
+export default function Settings() {
+  const [live, setLive] = useState(null)
+  const [meta, setMeta] = useState({})
+  const [settings, setSettings] = useState(null)
+  const [tokens, setTokens] = useState([])
+  const [audit, setAudit] = useState([])
+  const [newToken, setNewToken] = useState('')
+  const [msg, setMsg] = useState('')
+
+  async function loadAll() {
+    const [l, m, s, t, a] = await Promise.all([
+      getJSON('/api/live').catch(() => null),
+      getJSON('/api/host_meta').catch(() => ({})),
+      getJSON('/api/settings').catch(() => null),
+      getJSON('/api/tokens').catch(() => []),
+      getJSON('/api/audit').catch(() => []),
+    ])
+    setLive(l); setMeta(m || {}); setSettings(s); setTokens(t || []); setAudit(a || [])
+  }
+  useEffect(() => { loadAll() }, [])
+
+  function flash(t) { setMsg(t); setTimeout(() => setMsg(''), 2500) }
+
+  async function saveHost(key, patch) {
+    try { await patchJSON(`/api/host_meta/${encodeURIComponent(key)}`, patch); flash(`Gespeichert: ${key}`) }
+    catch (e) { flash(`Fehler: ${e.message}`) }
+  }
+
+  async function createToken() {
+    if (!newToken.trim()) return
+    try { await postJSON('/api/tokens', { name: newToken.trim() }); setNewToken(''); flash('Token erstellt'); loadAll() }
+    catch (e) { flash(`Fehler: ${e.message}`) }
+  }
+  async function deleteToken(id) {
+    if (!confirm('Token löschen?')) return
+    try { await delJSON(`/api/tokens/${id}`); flash('Token gelöscht'); loadAll() }
+    catch (e) { flash(`Fehler: ${e.message}`) }
+  }
+  async function testTelegram() {
+    try { const r = await postJSON('/api/telegram/test'); flash(r?.ok === false ? `Telegram: ${r.error}` : 'Telegram-Test gesendet') }
+    catch (e) { flash(`Fehler: ${e.message}`) }
+  }
+
+  const hosts = live?.hosts || []
+
+  return (
+    <>
+      {msg && <div className="toast">{msg}</div>}
+
+      <div className="group-title">Hosts bearbeiten</div>
+      <div className="panel" style={{ marginBottom: 22 }}>
+        {hosts.length === 0 && <div className="muted">lädt …</div>}
+        {hosts.map(h => <HostRow key={h.key} h={h} meta={meta[h.key] || {}} onSave={saveHost} />)}
+      </div>
+
+      <div className="group-title">API-Tokens</div>
+      <div className="panel" style={{ marginBottom: 22 }}>
+        <div className="actions" style={{ marginBottom: 12 }}>
+          <input className="inp" placeholder="Token-Name (z.B. host-xyz)" value={newToken}
+            onChange={e => setNewToken(e.target.value)} />
+          <button className="btn" onClick={createToken}>+ Erstellen</button>
+        </div>
+        {tokens.length === 0 && <div className="muted">keine Tokens</div>}
+        {tokens.map(t => (
+          <div className="kv" key={t.id}>
+            <span>{t.name}</span>
+            <span className="mono" style={{ flex: 1, textAlign: 'center', color: 'var(--text-mute)' }}>
+              {(t.token || '').slice(0, 8)}…
+            </span>
+            <button className="btn danger" onClick={() => deleteToken(t.id)}>Löschen</button>
+          </div>
+        ))}
+      </div>
+
+      <div className="group-title">Konfiguration</div>
+      <div className="panel" style={{ marginBottom: 22 }}>
+        <div className="kv"><span>Agent-Token</span><span className="mono">{mask(settings?.agent_token)}</span></div>
+        <div className="kv"><span>Agent-Port</span><span className="mono">{settings?.agent_port ?? '—'}</span></div>
+        <div className="kv"><span>Dashboard-URL</span><span className="mono">{settings?.dashboard_url ?? '—'}</span></div>
+        <div className="kv">
+          <span>Telegram</span>
+          <span>
+            <span className={`pill ${settings?.telegram_configured ? 'online' : 'offline'}`}>
+              {settings?.telegram_configured ? 'konfiguriert' : 'nicht konfiguriert'}
+            </span>
+            <button className="btn" style={{ marginLeft: 10 }} onClick={testTelegram}>Test senden</button>
+          </span>
+        </div>
+      </div>
+
+      <div className="group-title">Audit-Log (letzte Aktionen)</div>
+      <div className="panel">
+        <div className="logs" style={{ maxHeight: 280 }}>
+          {audit.length === 0 && <div className="muted">leer</div>}
+          {audit.slice(0, 60).map((a, i) => (
+            <div key={i}>{new Date(a.ts * 1000).toLocaleString()} · {a.user} · {a.action} · {a.host} · {a.detail}</div>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function HostRow({ h, meta, onSave }) {
+  const [name, setName] = useState(meta.display_name || h.name || '')
+  const [cat, setCat] = useState(meta.category || h.category || 'sonstige')
+  const [notes, setNotes] = useState(meta.notes || '')
+  return (
+    <div className="host-edit">
+      <span className="he-key mono">{h.ip}{h.ct_id ? ` · CT${h.ct_id}` : ''}</span>
+      <input className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="Anzeigename" />
+      <select className="inp" value={cat} onChange={e => setCat(e.target.value)}>
+        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <input className="inp" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notizen" />
+      <button className="btn" onClick={() => onSave(h.key, { display_name: name, category: cat, notes })}>Speichern</button>
+    </div>
+  )
+}
+
+function mask(v) { return v ? v.slice(0, 6) + '…' + v.slice(-3) : '—' }

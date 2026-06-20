@@ -12,8 +12,17 @@ export async function getJSON(path, opts = {}) {
 }
 
 export function postJSON(path, body) {
+  return sendJSON('POST', path, body)
+}
+export function patchJSON(path, body) {
+  return sendJSON('PATCH', path, body)
+}
+export function delJSON(path) {
+  return sendJSON('DELETE', path)
+}
+function sendJSON(method, path, body) {
   return getJSON(path, {
-    method: 'POST',
+    method,
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   })
