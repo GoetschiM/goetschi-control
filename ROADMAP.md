@@ -43,7 +43,9 @@ Decisions (2026-06-20):
 - [x] Per-CT inventory: OS + version, Python version, kernel, installed packages (via Proxmox pct exec, cached in audit.db)
 - [x] Searchable across all hosts ("which CT runs package X vY?") for zero-day triage
 - [ ] Scheduled/auto inventory refresh + change history
-- [ ] pip / npm package inventory (not just dpkg)
+- [x] pip package inventory (system pip; note: most python here is in venv/uv, so often empty)
+- [x] Integrations self-test page (Proxmox/Prometheus/Loki/UniFi/LiteLLM/LLM/Dokploy/agents) — "MCP/API audit"
+- [x] Per-user password change
 - [ ] Host tags (owner, environment, criticality)
 
 ## Phase 4 — Pro features
