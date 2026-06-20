@@ -10,17 +10,34 @@ export default function Settings() {
   const [tokens, setTokens] = useState([])
   const [audit, setAudit] = useState([])
   const [newToken, setNewToken] = useState('')
+  const [users, setUsers] = useState([])
+  const [me, setMe] = useState(null)
+  const [nu, setNu] = useState({ username: '', password: '', role: 'viewer' })
   const [msg, setMsg] = useState('')
 
   async function loadAll() {
-    const [l, m, s, t, a] = await Promise.all([
+    const [l, m, s, t, a, u, meR] = await Promise.all([
       getJSON('/api/live').catch(() => null),
       getJSON('/api/host_meta').catch(() => ({})),
       getJSON('/api/settings').catch(() => null),
       getJSON('/api/tokens').catch(() => []),
       getJSON('/api/audit').catch(() => []),
+      getJSON('/api/users').catch(() => []),
+      getJSON('/api/me').catch(() => null),
     ])
     setLive(l); setMeta(m || {}); setSettings(s); setTokens(t || []); setAudit(a || [])
+    setUsers(Array.isArray(u) ? u : []); setMe(meR)
+  }
+
+  async function createUser() {
+    if (!nu.username.trim() || !nu.password) return flash('Benutzername + Passwort nötig')
+    try { await postJSON('/api/users', nu); setNu({ username: '', password: '', role: 'viewer' }); flash('Benutzer angelegt'); loadAll() }
+    catch (e) { flash('Fehler: ' + e.message) }
+  }
+  async function deleteUser(u) {
+    if (!confirm(`Benutzer "${u}" löschen?`)) return
+    try { await delJSON(`/api/users/${encodeURIComponent(u)}`); flash('gelöscht'); loadAll() }
+    catch (e) { flash('Fehler: ' + e.message) }
   }
   useEffect(() => { loadAll() }, [])
 
@@ -51,6 +68,32 @@ export default function Settings() {
   return (
     <>
       {msg && <div className="toast">{msg}</div>}
+
+      {me?.role === 'admin' && (
+        <>
+          <div className="group-title">Benutzer & Rollen</div>
+          <div className="panel" style={{ marginBottom: 22 }}>
+            <div className="actions" style={{ marginBottom: 12 }}>
+              <input className="inp" placeholder="Benutzername" value={nu.username} onChange={e => setNu({ ...nu, username: e.target.value })} />
+              <input className="inp" type="password" placeholder="Passwort" value={nu.password} onChange={e => setNu({ ...nu, password: e.target.value })} />
+              <select className="inp" value={nu.role} onChange={e => setNu({ ...nu, role: e.target.value })}>
+                <option value="viewer">viewer (nur lesen)</option>
+                <option value="admin">admin (voll)</option>
+              </select>
+              <button className="btn primary" onClick={createUser}>+ Anlegen</button>
+            </div>
+            {users.map(u => (
+              <div className="kv" key={u.username}>
+                <span><b>{u.username}</b> {u.username === me.username && <span className="muted">(du)</span>}</span>
+                <span className={u.role === 'admin' ? 'role-admin' : 'role-viewer'}>{u.role}</span>
+                <span className="muted" style={{ flex: 1, textAlign: 'right', fontSize: 12 }}>{u.last_login ? `zuletzt ${u.last_login}` : 'nie'}</span>
+                {u.username !== me.username && <button className="btn danger" onClick={() => deleteUser(u.username)}>Löschen</button>}
+              </div>
+            ))}
+            <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>Viewer können alles sehen, aber keine Aktionen ausführen (Reboot, Container, Terminal, Automationen …).</p>
+          </div>
+        </>
+      )}
 
       <div className="group-title">Hosts bearbeiten</div>
       <div className="panel" style={{ marginBottom: 22 }}>

@@ -314,6 +314,35 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('authenticated'):
+            return redirect(url_for('login_page'))
+        # legacy sessions without a role are treated as admin (owner) for safety
+        if session.get('role', 'admin') != 'admin':
+            return jsonify({'ok': False, 'error': 'Nur Admins dürfen das'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+def _users_ensure():
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('''CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY, pw_hash TEXT, role TEXT DEFAULT 'viewer',
+        created_at TEXT, last_login TEXT)''')
+    if conn.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
+        now = time.strftime('%Y-%m-%dT%H:%M:%S')
+        for u, h in USERS.items():   # seed existing accounts as admins
+            conn.execute('INSERT OR IGNORE INTO users (username,pw_hash,role,created_at) VALUES (?,?,?,?)', (u, h, 'admin', now))
+    conn.commit(); conn.close()
+
+def _user_get(username):
+    _users_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    row = conn.execute('SELECT username,pw_hash,role FROM users WHERE username=?', (username,)).fetchone()
+    conn.close()
+    return {'username': row[0], 'pw_hash': row[1], 'role': row[2]} if row else None
+
 class Cache:
     def __init__(self):
         self._d = {}; self._ts = {}; self._lk = threading.Lock()
@@ -1918,11 +1947,24 @@ def login_page():
     if request.method == 'POST':
         u = request.form.get('username', '').strip().lower()
         p = request.form.get('password', '')
-        if u in USERS and check_password_hash(USERS[u], p):
+        ok, role = False, 'admin'
+        dbu = _user_get(u)
+        if dbu and check_password_hash(dbu['pw_hash'], p):
+            ok, role = True, dbu['role'] or 'viewer'
+        elif u in USERS and check_password_hash(USERS[u], p):  # safety-net fallback (always admin)
+            ok, role = True, 'admin'
+        if ok:
             session.clear()
             session['authenticated'] = True
             session['username'] = u
+            session['role'] = role
             session.permanent = True
+            try:
+                conn = sqlite3.connect(AUDIT_DB)
+                conn.execute('UPDATE users SET last_login=? WHERE username=?', (time.strftime('%Y-%m-%dT%H:%M:%S'), u))
+                conn.commit(); conn.close()
+            except Exception:
+                pass
             return redirect(url_for('index'))
         error = 'Ungültige Zugangsdaten'
     return render_template('login.html', error=error)
@@ -2038,14 +2080,14 @@ def api_restart(host_key):
 # ─── AUDIT LOG ────────────────────────────────
 
 @app.route('/api/container/<host_key>/<action>', methods=['POST'])
-@login_required
+@admin_required
 def api_container_action(host_key, action):
     name = (request.json or {}).get('name', '')
     _audit(request.remote_addr, f'container_{action}', host_key, name)
     return jsonify(container_action(host_key, name, action))
 
 @app.route('/api/container/bulk', methods=['POST'])
-@login_required
+@admin_required
 def api_container_bulk():
     d = request.json or {}
     action = d.get('action', '')
@@ -2139,7 +2181,7 @@ def api_ai_analyze():
         return jsonify({'ok': False, 'error': str(e)})
 
 @app.route('/api/lxc/<host_key>/<action>', methods=['POST'])
-@login_required
+@admin_required
 def api_lxc_action(host_key, action):
     _audit(request.remote_addr, f'lxc_{action}', host_key, '')
     return jsonify(lxc_action(host_key, action))
@@ -2210,7 +2252,7 @@ def api_board_discovered():
     return jsonify(_board_seed())
 
 @app.route('/api/board', methods=['PUT'])
-@login_required
+@admin_required
 def api_board_put():
     _board_ensure()
     body = request.json
@@ -2323,7 +2365,7 @@ def api_auto_list():
     return jsonify(_auto_list())
 
 @app.route('/api/automations', methods=['POST'])
-@login_required
+@admin_required
 def api_auto_create():
     import secrets as _s
     d = request.json or {}
@@ -2344,7 +2386,7 @@ def api_auto_create():
     return jsonify({'ok': True, 'id': rid})
 
 @app.route('/api/automations/<rid>', methods=['PATCH'])
-@login_required
+@admin_required
 def api_auto_patch(rid):
     d = request.json or {}
     _auto_ensure()
@@ -2358,7 +2400,7 @@ def api_auto_patch(rid):
     return jsonify({'ok': True})
 
 @app.route('/api/automations/<rid>', methods=['DELETE'])
-@login_required
+@admin_required
 def api_auto_delete(rid):
     _auto_ensure()
     conn = sqlite3.connect(AUDIT_DB)
@@ -2367,7 +2409,7 @@ def api_auto_delete(rid):
     return jsonify({'ok': True})
 
 @app.route('/api/automations/<rid>/test', methods=['POST'])
-@login_required
+@admin_required
 def api_auto_test(rid):
     rule = next((r for r in _auto_list() if r['id'] == rid), None)
     if not rule:
@@ -2394,6 +2436,52 @@ def api_processes(host_key):
         return jsonify(resp)
     except Exception as e:
         return jsonify({'error': str(e)})
+
+@app.route('/api/me')
+@login_required
+def api_me():
+    return jsonify({'username': session.get('username'), 'role': session.get('role', 'admin')})
+
+@app.route('/api/users', methods=['GET'])
+@admin_required
+def api_users_list():
+    _users_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    rows = conn.execute('SELECT username,role,created_at,last_login FROM users ORDER BY username').fetchall()
+    conn.close()
+    return jsonify([{'username': r[0], 'role': r[1], 'created_at': r[2], 'last_login': r[3]} for r in rows])
+
+@app.route('/api/users', methods=['POST'])
+@admin_required
+def api_users_create():
+    d = request.json or {}
+    u = (d.get('username') or '').strip().lower()
+    p = d.get('password') or ''
+    role = d.get('role', 'viewer')
+    if not u or not p:
+        return jsonify({'ok': False, 'error': 'username + password erforderlich'}), 400
+    if role not in ('admin', 'viewer'):
+        role = 'viewer'
+    _users_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('INSERT INTO users (username,pw_hash,role,created_at) VALUES (?,?,?,?) '
+                 'ON CONFLICT(username) DO UPDATE SET pw_hash=excluded.pw_hash, role=excluded.role',
+                 (u, generate_password_hash(p), role, time.strftime('%Y-%m-%dT%H:%M:%S')))
+    conn.commit(); conn.close()
+    _audit(request.remote_addr, 'user_create', u, role)
+    return jsonify({'ok': True})
+
+@app.route('/api/users/<username>', methods=['DELETE'])
+@admin_required
+def api_users_delete(username):
+    username = username.strip().lower()
+    if username == session.get('username'):
+        return jsonify({'ok': False, 'error': 'Eigenen Account nicht löschen'}), 400
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('DELETE FROM users WHERE username=?', (username,))
+    conn.commit(); conn.close()
+    _audit(request.remote_addr, 'user_delete', username, '')
+    return jsonify({'ok': True})
 
 @app.route('/api/settings')
 @login_required
@@ -2613,7 +2701,7 @@ def api_host_meta_get():
     return jsonify(_get_host_meta())
 
 @app.route('/api/host_meta/<host_key>', methods=['PATCH'])
-@login_required
+@admin_required
 def api_host_meta_patch(host_key):
     d = request.json or {}
     now = time.strftime('%Y-%m-%dT%H:%M:%S')
@@ -2643,7 +2731,7 @@ def api_tokens_list():
         return jsonify([])
 
 @app.route('/api/tokens', methods=['POST'])
-@login_required
+@admin_required
 def api_tokens_create():
     import secrets as _sec
     d = request.json or {}
@@ -2664,7 +2752,7 @@ def api_tokens_create():
         return jsonify({'ok': False, 'error': str(e)}), 400
 
 @app.route('/api/tokens/<token_id>', methods=['DELETE'])
-@login_required
+@admin_required
 def api_tokens_delete(token_id):
     conn = sqlite3.connect(AUDIT_DB)
     conn.execute('DELETE FROM agent_tokens WHERE id=?', (token_id,))
@@ -2867,6 +2955,8 @@ def v1_host_restart(host_key):
 def ws_ssh_open(data):
     if not session.get('authenticated'):
         emit('ssh_data', {'d': '\r\n[GL] Unauthorized\r\n'}); return
+    if session.get('role', 'admin') != 'admin':
+        emit('ssh_data', {'d': '\r\n[GL] SSH nur für Admins\r\n'}); return
     key = data.get('host', '')
     h   = STATIC_HOSTS.get(key)
     if not h or not h[4]:
@@ -3014,6 +3104,10 @@ if __name__ == '__main__':
     threading.Thread(target=_nanoclaw_bg, daemon=True).start()
     threading.Thread(target=_metrics_bg, daemon=True).start()
     threading.Thread(target=_automations_bg, daemon=True).start()
+    try:
+        _users_ensure()
+    except Exception as e:
+        print(f'[users] seed: {e}')
     print('[Nanoclaw] Self-healing engine started')
     print('[Metrics] History storage started (60s interval)')
     if TELEGRAM_TOKEN:

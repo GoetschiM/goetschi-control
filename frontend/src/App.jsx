@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import { getJSON } from './api.js'
 import Overview from './pages/Overview.jsx'
 import HostDetail from './pages/HostDetail.jsx'
 import ContainerDetail from './pages/ContainerDetail.jsx'
@@ -34,7 +35,10 @@ const IDLE_MS = 5 * 60 * 1000  // auto-logout after 5 min inactivity
 export default function App() {
   const [navOpen, setNavOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('gc_collapsed') === '1')
+  const [me, setMe] = useState(null)
   const loc = useLocation()
+
+  useEffect(() => { getJSON('/api/me').then(setMe).catch(() => {}) }, [])
 
   function toggleCollapsed() {
     setCollapsed(c => { localStorage.setItem('gc_collapsed', c ? '0' : '1'); return !c })
@@ -74,6 +78,7 @@ export default function App() {
           <button className="menu-btn" onClick={() => setNavOpen(o => !o)}>☰</button>
           <h1>{titleFor(loc.pathname)}</h1>
           <div className="spacer" />
+          {me && <span className="user-badge">{me.username} · <b className={me.role === 'admin' ? 'role-admin' : 'role-viewer'}>{me.role}</b></span>}
           <a className="btn" href="/logout">Logout</a>
         </header>
         <div className="content">
