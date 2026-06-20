@@ -1961,13 +1961,30 @@ def api_discovery_refresh():
 @app.route('/api/logs/<host_key>')
 @login_required
 def api_logs(host_key):
-    h = STATIC_HOSTS.get(host_key) or next(
-        (v for k, v in STATIC_HOSTS.items() if k.startswith('auto-') and k == host_key), None)
-    if not h:
-        return jsonify({'lines': []})
-    ip    = h[1]
-    lines = get_loki_logs(f'{{host=~"{ip}.*"}}', limit=30)
-    return jsonify({'host': host_key, 'ip': ip, 'lines': lines})
+    # Primary source = the host's systemd journal via Proxmox pct exec. (Loki is the
+    # intended central store but its promtail shippers are broken / it is empty, so we
+    # read journals directly — reliable real-time logs on every CT.)
+    cached = cache.get(f'logs:{host_key}', ttl=20)
+    if cached is not None:
+        return jsonify(cached)
+    vmid = _host_vmid(host_key)
+    if vmid and PROXMOX_PASS:
+        try:
+            raw = _prox_exec(vmid, 'journalctl -n 120 --no-pager -o short-iso 2>/dev/null', timeout=20)
+            lines = [{'msg': l} for l in raw.splitlines() if l.strip()]
+            if lines:
+                res = {'host': host_key, 'source': 'journal', 'lines': lines[-120:]}
+                cache.set(f'logs:{host_key}', res)
+                return jsonify(res)
+        except Exception:
+            pass
+    # fallback: Loki (legacy)
+    h = STATIC_HOSTS.get(host_key)
+    ip = h[1] if h else None
+    lines = get_loki_logs(f'{{host=~"{ip}.*"}}', limit=40) if ip else []
+    res = {'host': host_key, 'ip': ip, 'source': 'loki', 'lines': lines}
+    cache.set(f'logs:{host_key}', res)
+    return jsonify(res)
 
 @app.route('/api/agent/<host_key>')
 @login_required
@@ -2075,10 +2092,16 @@ def _build_ai_context(host_key=None):
             if down:
                 out.append(f"  Dienste nicht-online: {', '.join(down[:12])}")
             try:
-                logs = get_loki_logs(f'{{host=~"{h.get("ip")}.*"}}', limit=25)
+                vmid = h.get('ct_id')
+                logs = []
+                if vmid and PROXMOX_PASS:
+                    raw = _prox_exec(vmid, 'journalctl -n 40 --no-pager -o short-iso 2>/dev/null', timeout=15)
+                    logs = [{'msg': l} for l in raw.splitlines() if l.strip()][-40:]
+                if not logs:
+                    logs = get_loki_logs(f'{{host=~"{h.get("ip")}.*"}}', limit=25)
                 if logs:
                     out.append("  Letzte Logzeilen:")
-                    for l in logs[:25]:
+                    for l in logs[-30:]:
                         out.append(f"    {str(l.get('msg', ''))[:160]}")
             except Exception:
                 pass
