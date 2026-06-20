@@ -2057,17 +2057,18 @@ def api_inventory_scan(host_key):
 @app.route('/api/inventory/scan-all', methods=['POST'])
 @login_required
 def api_inventory_scan_all():
+    # Iterate STATIC_HOSTS directly (every LXC has a ct_id) — independent of the
+    # live cache, which may be empty/stale inside a background thread.
+    keys = [k for k, h in STATIC_HOSTS.items() if h[4]]
     def _bg():
-        live = cache.get('live') or {}
-        for h in live.get('hosts', []):
-            if h.get('ct_id'):
-                try:
-                    scan_host_inventory(h['key'])
-                except Exception:
-                    pass
+        for key in keys:
+            try:
+                scan_host_inventory(key)
+            except Exception:
+                pass
     threading.Thread(target=_bg, daemon=True).start()
-    _audit(request.remote_addr, 'inv_scan_all', '', '')
-    return jsonify({'ok': True, 'msg': 'Scan aller LXC gestartet (Hintergrund)'})
+    _audit(request.remote_addr, 'inv_scan_all', '', f'{len(keys)} hosts')
+    return jsonify({'ok': True, 'msg': f'Scan von {len(keys)} LXC gestartet (Hintergrund)'})
 
 @app.route('/api/nanoclaw/events')
 @login_required
