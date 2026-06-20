@@ -150,6 +150,7 @@ button { font-family: inherit; }
 .user-badge { font-size: 12.5px; color: var(--text-dim); margin-right: 4px; }
 .role-admin { color: var(--ok); font-weight: 700; }
 .role-viewer { color: var(--text-mute); font-weight: 700; }
+.mfa-qr svg { width: 180px; height: 180px; background: #fff; padding: 8px; border-radius: 8px; display: block; margin: 10px 0; }
 .center-msg { padding: 60px 0; text-align: center; color: var(--text-mute); }
 .spark { display: block; }
 .src-tag { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: .4px; }

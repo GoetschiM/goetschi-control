@@ -13,7 +13,19 @@ export default function Settings() {
   const [users, setUsers] = useState([])
   const [me, setMe] = useState(null)
   const [nu, setNu] = useState({ username: '', password: '', role: 'viewer' })
+  const [mfaSetup, setMfaSetup] = useState(null)
+  const [mfaCode, setMfaCode] = useState('')
   const [msg, setMsg] = useState('')
+
+  async function startMfa() { try { setMfaSetup(await postJSON('/api/mfa/setup')) } catch (e) { flash('Fehler: ' + e.message) } }
+  async function confirmMfa() {
+    try { await postJSON('/api/mfa/enable', { code: mfaCode }); setMfaSetup(null); setMfaCode(''); flash('2FA aktiviert'); loadAll() }
+    catch (e) { flash('Fehler: ' + e.message) }
+  }
+  async function disableMfa() {
+    const code = prompt('Aktuellen 2FA-Code eingeben:'); if (!code) return
+    try { await postJSON('/api/mfa/disable', { code }); flash('2FA deaktiviert'); loadAll() } catch (e) { flash('Fehler: ' + e.message) }
+  }
 
   async function loadAll() {
     const [l, m, s, t, a, u, meR] = await Promise.all([
@@ -68,6 +80,25 @@ export default function Settings() {
   return (
     <>
       {msg && <div className="toast">{msg}</div>}
+
+      <div className="group-title">Zwei-Faktor (2FA){me ? ` — ${me.username}` : ''}</div>
+      <div className="panel" style={{ marginBottom: 22 }}>
+        {me?.mfa ? (
+          <div className="actions"><span className="role-admin">✓ 2FA aktiv</span><button className="btn danger" onClick={disableMfa}>Deaktivieren</button></div>
+        ) : mfaSetup ? (
+          <div>
+            <p className="muted">Scanne den QR-Code mit deiner Authenticator-App (z.B. Google Authenticator, Aegis), dann gib den 6-stelligen Code ein:</p>
+            <div className="mfa-qr" dangerouslySetInnerHTML={{ __html: mfaSetup.qr_svg }} />
+            <p className="muted mono" style={{ fontSize: 11 }}>Secret (manuell): {mfaSetup.secret}</p>
+            <div className="actions">
+              <input className="inp" placeholder="6-stelliger Code" value={mfaCode} onChange={e => setMfaCode(e.target.value)} inputMode="numeric" maxLength={6} />
+              <button className="btn primary" onClick={confirmMfa}>Aktivieren</button>
+            </div>
+          </div>
+        ) : (
+          <div className="actions"><span className="muted">2FA ist nicht aktiv</span><button className="btn primary" onClick={startMfa}>2FA aktivieren</button></div>
+        )}
+      </div>
 
       {me?.role === 'admin' && (
         <>

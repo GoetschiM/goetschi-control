@@ -330,6 +330,11 @@ def _users_ensure():
     conn.execute('''CREATE TABLE IF NOT EXISTS users (
         username TEXT PRIMARY KEY, pw_hash TEXT, role TEXT DEFAULT 'viewer',
         created_at TEXT, last_login TEXT)''')
+    for col, ddl in [('mfa_secret', 'TEXT'), ('mfa_enabled', 'INTEGER DEFAULT 0')]:
+        try:
+            conn.execute(f'ALTER TABLE users ADD COLUMN {col} {ddl}')
+        except Exception:
+            pass
     if conn.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
         now = time.strftime('%Y-%m-%dT%H:%M:%S')
         for u, h in USERS.items():   # seed existing accounts as admins
@@ -342,6 +347,26 @@ def _user_get(username):
     row = conn.execute('SELECT username,pw_hash,role FROM users WHERE username=?', (username,)).fetchone()
     conn.close()
     return {'username': row[0], 'pw_hash': row[1], 'role': row[2]} if row else None
+
+def _user_mfa(username):
+    _users_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    row = conn.execute('SELECT mfa_secret, mfa_enabled FROM users WHERE username=?', (username,)).fetchone()
+    conn.close()
+    return {'secret': row[0], 'enabled': bool(row[1])} if row else None
+
+def _login_finalize(u, role):
+    session.clear()
+    session['authenticated'] = True
+    session['username'] = u
+    session['role'] = role
+    session.permanent = True
+    try:
+        conn = sqlite3.connect(AUDIT_DB)
+        conn.execute('UPDATE users SET last_login=? WHERE username=?', (time.strftime('%Y-%m-%dT%H:%M:%S'), u))
+        conn.commit(); conn.close()
+    except Exception:
+        pass
 
 class Cache:
     def __init__(self):
@@ -1945,6 +1970,22 @@ def login_page():
         return redirect(url_for('index'))
     error = None
     if request.method == 'POST':
+        # ── MFA step 2: a pending user submits their TOTP code ──
+        if session.get('mfa_pending'):
+            u = session['mfa_pending']
+            code = request.form.get('mfa_code', '').strip()
+            um = _user_mfa(u)
+            try:
+                import pyotp
+                valid = bool(um and um['secret'] and pyotp.TOTP(um['secret']).verify(code, valid_window=1))
+            except Exception:
+                valid = False
+            if valid:
+                _login_finalize(u, (_user_get(u) or {}).get('role', 'admin'))
+                return redirect(url_for('index'))
+            return render_template('login.html', error='Falscher 2FA-Code', mfa=True)
+
+        # ── step 1: username + password ──
         u = request.form.get('username', '').strip().lower()
         p = request.form.get('password', '')
         ok, role = False, 'admin'
@@ -1954,17 +1995,13 @@ def login_page():
         elif u in USERS and check_password_hash(USERS[u], p):  # safety-net fallback (always admin)
             ok, role = True, 'admin'
         if ok:
-            session.clear()
-            session['authenticated'] = True
-            session['username'] = u
-            session['role'] = role
-            session.permanent = True
-            try:
-                conn = sqlite3.connect(AUDIT_DB)
-                conn.execute('UPDATE users SET last_login=? WHERE username=?', (time.strftime('%Y-%m-%dT%H:%M:%S'), u))
-                conn.commit(); conn.close()
-            except Exception:
-                pass
+            um = _user_mfa(u)
+            if um and um['enabled'] and um['secret']:
+                session.clear()
+                session['mfa_pending'] = u
+                session.permanent = True
+                return render_template('login.html', error=None, mfa=True)
+            _login_finalize(u, role)
             return redirect(url_for('index'))
         error = 'Ungültige Zugangsdaten'
     return render_template('login.html', error=error)
@@ -2440,7 +2477,54 @@ def api_processes(host_key):
 @app.route('/api/me')
 @login_required
 def api_me():
-    return jsonify({'username': session.get('username'), 'role': session.get('role', 'admin')})
+    um = _user_mfa(session.get('username')) or {}
+    return jsonify({'username': session.get('username'), 'role': session.get('role', 'admin'),
+                    'mfa': um.get('enabled', False)})
+
+@app.route('/api/mfa/setup', methods=['POST'])
+@login_required
+def api_mfa_setup():
+    import pyotp, io, qrcode, qrcode.image.svg
+    u = session.get('username')
+    secret = pyotp.random_base32()
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('UPDATE users SET mfa_secret=?, mfa_enabled=0 WHERE username=?', (secret, u))
+    conn.commit(); conn.close()
+    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=u, issuer_name='Goetschi Control')
+    buf = io.BytesIO()
+    qrcode.make(uri, image_factory=qrcode.image.svg.SvgImage).save(buf)
+    return jsonify({'secret': secret, 'uri': uri, 'qr_svg': buf.getvalue().decode()})
+
+@app.route('/api/mfa/enable', methods=['POST'])
+@login_required
+def api_mfa_enable():
+    import pyotp
+    u = session.get('username')
+    code = (request.json or {}).get('code', '').strip()
+    um = _user_mfa(u)
+    if not (um and um['secret'] and pyotp.TOTP(um['secret']).verify(code, valid_window=1)):
+        return jsonify({'ok': False, 'error': 'Code ungültig'}), 400
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('UPDATE users SET mfa_enabled=1 WHERE username=?', (u,))
+    conn.commit(); conn.close()
+    _audit(request.remote_addr, 'mfa_enable', u, '')
+    return jsonify({'ok': True})
+
+@app.route('/api/mfa/disable', methods=['POST'])
+@login_required
+def api_mfa_disable():
+    import pyotp
+    u = session.get('username')
+    code = (request.json or {}).get('code', '').strip()
+    um = _user_mfa(u)
+    if um and um['enabled']:
+        if not (um['secret'] and pyotp.TOTP(um['secret']).verify(code, valid_window=1)):
+            return jsonify({'ok': False, 'error': 'Code ungültig'}), 400
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('UPDATE users SET mfa_enabled=0, mfa_secret=NULL WHERE username=?', (u,))
+    conn.commit(); conn.close()
+    _audit(request.remote_addr, 'mfa_disable', u, '')
+    return jsonify({'ok': True})
 
 @app.route('/api/users', methods=['GET'])
 @admin_required

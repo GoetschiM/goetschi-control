@@ -31,6 +31,20 @@
         </div>
 
         <form class="login-form" action="/login" method="POST">
+            {% if mfa %}
+            <div>
+                <label class="login-label" for="mfa_code">2FA-Code</label>
+                <input class="login-input" type="text" id="mfa_code" name="mfa_code"
+                       placeholder="6-stelliger Code" required autofocus autocomplete="one-time-code"
+                       inputmode="numeric" pattern="[0-9]*" maxlength="6">
+            </div>
+
+            {% if error %}
+            <div class="login-error">{{ error }}</div>
+            {% endif %}
+
+            <button type="submit" class="login-btn">Bestätigen &#8594;</button>
+            {% else %}
             <div>
                 <label class="login-label" for="username">Benutzername</label>
                 <input class="login-input" type="text" id="username" name="username"
@@ -48,6 +62,7 @@
             {% endif %}
 
             <button type="submit" class="login-btn">Anmelden &#8594;</button>
+            {% endif %}
         </form>
 
         <div style="text-align:center;margin-top:24px;font-family:var(--mono);
