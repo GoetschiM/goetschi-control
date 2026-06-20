@@ -50,7 +50,8 @@ Decisions (2026-06-20):
 - [ ] Backup success monitoring
 - [ ] SSL cert + domain expiry monitoring
 - [ ] Grafana / DB integrations
-- [ ] AI analysis: log summary, root-cause, "chat with infrastructure"
+- [x] AI analysis: "chat with infrastructure" (grounded in metrics/logs/alerts via LiteLLM gemini-flash)
+- [ ] AI: scheduled incident summaries, ticket suggestions, deeper Loki/Prometheus tool-calling
 
 ## Smarter agents (cross-cutting)
 - [ ] gl-agent: versioning, auto-update, command channel, richer security/asset data
