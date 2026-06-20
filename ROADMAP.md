@@ -38,9 +38,11 @@ Decisions (2026-06-20):
 - [ ] Add / remove monitored CT / device / service from the UI
 
 ## Phase 3 — Asset & security transparency
-- [ ] Per-CT inventory: OS + version, Python version, installed packages
-- [ ] Searchable across all hosts ("which CT runs package X vY?") for zero-day triage
-- [ ] Host tags (owner, environment, criticality), change history
+- [x] Per-CT inventory: OS + version, Python version, kernel, installed packages (via Proxmox pct exec, cached in audit.db)
+- [x] Searchable across all hosts ("which CT runs package X vY?") for zero-day triage
+- [ ] Scheduled/auto inventory refresh + change history
+- [ ] pip / npm package inventory (not just dpkg)
+- [ ] Host tags (owner, environment, criticality)
 
 ## Phase 4 — Pro features
 - [ ] RBAC, user management, MFA, audit log, API tokens
