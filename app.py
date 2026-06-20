@@ -1519,6 +1519,51 @@ def _inv_all_summary():
     return [{'host_key': r[0], 'vmid': r[1], 'os': r[2], 'version_id': r[3],
              'python': r[4], 'kernel': r[5], 'pkg_count': r[6], 'scanned_at': r[7]} for r in rows]
 
+def _inv_os_map():
+    """{host_key: real distro OS} from the inventory (so the UI shows e.g. 'Ubuntu
+    24.04' instead of the shared Proxmox kernel that the agent reports as OS)."""
+    cached = cache.get('inv_os', ttl=300)
+    if cached is not None:
+        return cached
+    m = {}
+    try:
+        _inv_ensure_table()
+        conn = sqlite3.connect(AUDIT_DB)
+        m = {r[0]: r[1] for r in conn.execute('SELECT host_key, os FROM inventory').fetchall()}
+        conn.close()
+    except Exception:
+        pass
+    cache.set('inv_os', m)
+    return m
+
+# ─── LXC LIFECYCLE (start/stop/reboot whole container via Proxmox) ──
+def _prox_host_exec(cmd, timeout=60):
+    ssh = _paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(_paramiko.AutoAddPolicy())
+    ssh.connect(PROXMOX_HOST, port=22, username='root', password=PROXMOX_PASS,
+                timeout=10, look_for_keys=False, allow_agent=False)
+    try:
+        _, o, e = ssh.exec_command(cmd, timeout=timeout)
+        return o.read().decode('utf-8', 'replace') + e.read().decode('utf-8', 'replace')
+    finally:
+        ssh.close()
+
+def lxc_action(host_key, action):
+    if action not in ('start', 'stop', 'reboot', 'shutdown'):
+        return {'ok': False, 'error': 'Ungültige Aktion'}
+    vmid = _host_vmid(host_key)
+    if not vmid:
+        return {'ok': False, 'error': 'Kein LXC / keine VMID'}
+    if not PROXMOX_PASS:
+        return {'ok': False, 'error': 'PROXMOX_PASS fehlt'}
+    try:
+        out = _prox_host_exec(f'pct {action} {int(vmid)} 2>&1', timeout=90).strip()
+        ok = 'error' not in out.lower() and 'unable' not in out.lower() and 'failed' not in out.lower()
+        cache.bust()
+        return {'ok': ok, 'msg': out[:300] or f'{action} ausgelöst'}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
 # ─── CONTAINER ACTIONS (start/stop/restart via Proxmox) ────────
 _SAFE_CNAME = re.compile(r'^[A-Za-z0-9_.\-]+$')
 
@@ -1730,6 +1775,7 @@ def run_live_checks():
             'category':     cat,
             'ct_id':        ct_id,
             'auto':         key.startswith('auto-'),
+            'os_name':      _inv_os_map().get(key),
             'status':       st,
             'status_reason': reason,
             'ping_rtt':     prtt,
@@ -2069,11 +2115,38 @@ def api_ai_analyze():
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
+@app.route('/api/lxc/<host_key>/<action>', methods=['POST'])
+@login_required
+def api_lxc_action(host_key, action):
+    _audit(request.remote_addr, f'lxc_{action}', host_key, '')
+    return jsonify(lxc_action(host_key, action))
+
+_acked_alerts = {}  # signature -> ts
+
+def _alert_sig(a):
+    return f"{a.get('key')}|{a.get('msg')}"
+
 @app.route('/api/alerts')
 @login_required
 def api_alerts():
     cached = cache.get('live', ttl=CACHE_TTL)
-    return jsonify(cached.get('alerts', []) if cached else [])
+    alerts = cached.get('alerts', []) if cached else []
+    for a in alerts:
+        a['acked'] = _alert_sig(a) in _acked_alerts
+    return jsonify(alerts)
+
+@app.route('/api/alerts/ack', methods=['POST'])
+@login_required
+def api_alerts_ack():
+    d = request.json or {}
+    sig = d.get('sig')
+    if sig:
+        _acked_alerts[sig] = time.time()
+        # prune old acks (>24h) so cleared-then-recurring alerts re-appear
+        cutoff = time.time() - 86400
+        for k in [k for k, v in _acked_alerts.items() if v < cutoff]:
+            _acked_alerts.pop(k, None)
+    return jsonify({'ok': True})
 
 @app.route('/api/processes/<host_key>')
 @login_required

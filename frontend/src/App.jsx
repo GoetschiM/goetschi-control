@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
 import Overview from './pages/Overview.jsx'
 import HostDetail from './pages/HostDetail.jsx'
@@ -21,23 +21,43 @@ const NAV = [
   { to: '/settings', ico: '⚙', label: 'Einstellungen' },
 ]
 
+const IDLE_MS = 5 * 60 * 1000  // auto-logout after 5 min inactivity
+
 export default function App() {
   const [navOpen, setNavOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('gc_collapsed') === '1')
   const loc = useLocation()
 
+  function toggleCollapsed() {
+    setCollapsed(c => { localStorage.setItem('gc_collapsed', c ? '0' : '1'); return !c })
+  }
+
+  // auto-logout on inactivity
+  useEffect(() => {
+    let t
+    const reset = () => { clearTimeout(t); t = setTimeout(() => { window.location.href = '/logout' }, IDLE_MS) }
+    const evs = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']
+    evs.forEach(e => window.addEventListener(e, reset, { passive: true }))
+    reset()
+    return () => { clearTimeout(t); evs.forEach(e => window.removeEventListener(e, reset)) }
+  }, [])
+
   return (
-    <div className={`app ${navOpen ? 'nav-open' : ''}`}>
+    <div className={`app ${navOpen ? 'nav-open' : ''} ${collapsed ? 'collapsed' : ''}`}>
       <aside className="sidebar">
-        <div className="brand"><span className="dot" /> Goetschi Control</div>
+        <div className="brand">
+          <span className="dot" /> <span className="brand-label">Goetschi Control</span>
+          <button className="collapse-btn" onClick={toggleCollapsed} title="Menü ein-/ausklappen">‹</button>
+        </div>
         <nav className="nav" onClick={() => setNavOpen(false)}>
           {NAV.map(n => (
-            <NavLink key={n.to} to={n.to} end={n.end}
+            <NavLink key={n.to} to={n.to} end={n.end} title={n.label}
               className={({ isActive }) => (isActive ? 'active' : '')}>
-              <span className="ico">{n.ico}</span>{n.label}
+              <span className="ico">{n.ico}</span><span className="nav-label">{n.label}</span>
             </NavLink>
           ))}
         </nav>
-        <div className="foot">v0.2 · RRM redesign</div>
+        <div className="foot">v0.3 · RRM</div>
       </aside>
       <div className="scrim" onClick={() => setNavOpen(false)} />
 

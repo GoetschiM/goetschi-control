@@ -35,6 +35,17 @@ export default function HostDetail() {
     finally { setBusy('') }
   }
 
+  async function lxcAct(act) {
+    const lbl = { start: 'Starten', stop: 'Stoppen', reboot: 'Reboot', shutdown: 'Herunterfahren' }[act]
+    if (!confirm(`CT${host.ct_id} (${host.name}) — ${lbl}?`)) return
+    setBusy('lxc-' + act)
+    try {
+      const r = await postJSON(`/api/lxc/${encodeURIComponent(hostKey)}/${act}`)
+      alert(r.ok ? `${lbl}: ${r.msg || 'ausgelöst'}` : `Fehler: ${r.error || r.msg}`)
+    } catch (e) { alert(`Fehler: ${e.message}`) }
+    finally { setBusy('') }
+  }
+
   function toggleSel(name) {
     setSel(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
   }
@@ -66,7 +77,7 @@ export default function HostDetail() {
         <Pill status={host.status} />
       </div>
       <div className="muted" style={{ marginBottom: 20, fontFamily: 'var(--mono)' }}>
-        {host.ip}{host.ct_id ? ` · CT${host.ct_id}` : ''}{a.os ? ` · ${a.os}` : ''}
+        {host.ip}{host.ct_id ? ` · CT${host.ct_id}` : ''}{host.os_name ? ` · ${host.os_name}` : ''}
       </div>
 
       <div className="panels">
@@ -89,7 +100,8 @@ export default function HostDetail() {
           <div className="kv"><span>Ping</span><span className="mono">{host.ping_rtt != null ? `${host.ping_rtt} ms` : '—'}</span></div>
           <div className="kv"><span>Uptime</span><span className="mono">{a.uptime_h != null ? `${a.uptime_h} h` : '—'}</span></div>
           <div className="kv"><span>Agent</span><span className="mono">{a.agent_version || '—'}</span></div>
-          <div className="kv"><span>OS</span><span className="mono">{a.os || '—'}</span></div>
+          <div className="kv"><span>OS</span><span className="mono">{host.os_name || '—'}</span></div>
+          <div className="kv"><span>Kernel</span><span className="mono">{a.os || '—'}</span></div>
         </div>
 
         <div className="panel">
@@ -141,6 +153,17 @@ export default function HostDetail() {
 
         <div className="panel">
           <h3>Aktionen</h3>
+          {host.ct_id && (
+            <>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>LXC-Container (CT{host.ct_id})</div>
+              <div className="actions" style={{ marginBottom: 12 }}>
+                <button className="btn" disabled={!!busy} onClick={() => lxcAct('start')}>{busy === 'lxc-start' ? '…' : '▶ Start'}</button>
+                <button className="btn" disabled={!!busy} onClick={() => lxcAct('reboot')}>{busy === 'lxc-reboot' ? '…' : '↻ Reboot'}</button>
+                <button className="btn danger" disabled={!!busy} onClick={() => lxcAct('shutdown')}>{busy === 'lxc-shutdown' ? '…' : '⏻ Herunterfahren'}</button>
+                <button className="btn danger" disabled={!!busy} onClick={() => lxcAct('stop')}>{busy === 'lxc-stop' ? '…' : '⏹ Stop'}</button>
+              </div>
+            </>
+          )}
           <div className="actions">
             <Link className="btn" to={`/analyze?host=${encodeURIComponent(hostKey)}&q=${encodeURIComponent('Warum verhält sich dieser Host auffällig? Analysiere Last und Logs.')}`}>✦ KI-Analyse</Link>
             {host.ct_id && (
@@ -148,15 +171,11 @@ export default function HostDetail() {
             )}
             <button className="btn" disabled={!!busy}
               onClick={() => action(`/api/agent/${encodeURIComponent(hostKey)}/restart`, 'Agent-Neustart')}>
-              {busy === 'Agent-Neustart' ? '…' : '↻ Agent neustarten'}
-            </button>
-            <button className="btn" disabled={!!busy}
-              onClick={() => action(`/api/restart/${encodeURIComponent(hostKey)}`, 'Host-Neustart')}>
-              {busy === 'Host-Neustart' ? '…' : '⏻ Host neustarten'}
+              {busy === 'Agent-Neustart' ? '…' : '↻ Agent'}
             </button>
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-            Container-Aktionen (Neustart/Diagnose) auf der jeweiligen Container-Seite.
+            Einzelne Docker-Container verwalten: auf der jeweiligen Container-Seite.
           </p>
         </div>
 

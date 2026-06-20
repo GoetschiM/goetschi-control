@@ -1,20 +1,31 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePoll } from '../api.js'
 import { Pill, StatusDot, MetricBar } from '../ui.jsx'
 
+const GROUPERS = {
+  category: { label: 'Kategorie', fn: h => h.category || 'sonstige' },
+  ct: { label: 'CT / Typ', fn: h => (h.ct_id ? `CT${h.ct_id}` : 'extern') },
+  ip: { label: 'IP-Bereich', fn: h => (h.ip ? h.ip.split('.').slice(0, 3).join('.') + '.x' : '—') },
+  status: { label: 'Status', fn: h => h.status || 'unknown' },
+}
+
 export default function Overview() {
   const { data, loading, error } = usePoll('/api/live', 5000)
+  const [groupBy, setGroupBy] = useState(() => localStorage.getItem('gc_groupby') || 'category')
+
+  function changeGroup(g) { setGroupBy(g); localStorage.setItem('gc_groupby', g) }
 
   const groups = useMemo(() => {
     const hosts = data?.hosts || []
+    const fn = (GROUPERS[groupBy] || GROUPERS.category).fn
     const by = {}
-    for (const h of hosts) {
-      const c = h.category || 'sonstige'
-      ;(by[c] ||= []).push(h)
-    }
-    return Object.entries(by).sort((a, b) => a[0].localeCompare(b[0]))
-  }, [data])
+    for (const h of hosts) (by[fn(h)] ||= []).push(h)
+    return Object.entries(by).sort((a, b) => {
+      if (groupBy === 'ct') return (parseInt(a[0].replace(/\D/g, '')) || 9999) - (parseInt(b[0].replace(/\D/g, '')) || 9999)
+      return a[0].localeCompare(b[0])
+    })
+  }, [data, groupBy])
 
   if (loading && !data) return <div className="center-msg">lädt …</div>
   if (error && !data) return <div className="center-msg">Fehler: {String(error.message)}</div>
@@ -28,6 +39,13 @@ export default function Overview() {
         <Stat k="Degraded" v={s.degraded ?? 0} />
         <Stat k="Offline" v={s.offline ?? 0} />
         <Stat k="Alarme" v={(data?.alerts || []).length} />
+      </div>
+
+      <div className="groupby">
+        <span className="muted">Gruppieren:</span>
+        {Object.entries(GROUPERS).map(([k, g]) => (
+          <button key={k} className={`chip ${groupBy === k ? 'active' : ''}`} onClick={() => changeGroup(k)}>{g.label}</button>
+        ))}
       </div>
 
       {groups.map(([cat, hosts]) => (
@@ -56,6 +74,7 @@ function HostCard({ h }) {
         <Pill status={h.status} />
       </div>
       <div className="ip">{h.ip || '—'}{h.ct_id ? ` · CT${h.ct_id}` : ''}</div>
+      {h.os_name && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{h.os_name}</div>}
       <div style={{ marginTop: 10 }}>
         <MetricBar label="CPU" value={m.cpu} />
         <MetricBar label="RAM" value={m.ram} />

@@ -20,6 +20,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Global compact scale — at browser 100% the UI looks like ~80%. */
+html { zoom: 0.8; }
 html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--bg);
@@ -56,6 +58,18 @@ button { font-family: inherit; }
 .nav a.active { background: var(--accent-dim); color: #fff; }
 .nav .ico { width: 18px; text-align: center; opacity: .9; }
 .sidebar .foot { margin-top: auto; padding: 14px 18px; color: var(--text-mute); font-size: 12px; border-top: 1px solid var(--line); }
+.collapse-btn { margin-left: auto; background: none; border: 0; color: var(--text-mute); cursor: pointer; font-size: 18px; line-height: 1; padding: 0 2px; transition: transform .2s; }
+.collapse-btn:hover { color: var(--text); }
+
+/* collapsed sidebar (desktop) */
+@media (min-width: 821px) {
+  .app.collapsed { --sidebar-w: 58px; }
+  .app.collapsed .brand-label, .app.collapsed .nav-label, .app.collapsed .foot { display: none; }
+  .app.collapsed .brand { justify-content: center; padding: 18px 0 14px; }
+  .app.collapsed .collapse-btn { margin-left: 0; transform: rotate(180deg); }
+  .app.collapsed .nav a { justify-content: center; padding: 10px 0; }
+  .app.collapsed .nav .ico { width: auto; font-size: 17px; }
+}
 
 .main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
@@ -214,6 +228,8 @@ button { font-family: inherit; }
   padding: 7px 12px; border-radius: 999px; font-size: 12.5px; cursor: pointer;
 }
 .chip:hover { border-color: var(--accent); color: var(--text); }
+.chip.active { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+.groupby { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .ai-answer .ai-text { white-space: pre-wrap; line-height: 1.65; font-size: 14px; }
 
 /* ---- bulk actions ---- */
