@@ -13,11 +13,13 @@ import Maintenance from './pages/Maintenance.jsx'
 import Board from './pages/Board.jsx'
 import Automate from './pages/Automate.jsx'
 import Events from './pages/Events.jsx'
+import Metrics from './pages/Metrics.jsx'
 
 const NAV = [
   { to: '/', ico: '▦', label: 'Übersicht', end: true },
   { to: '/board', ico: '◰', label: 'Dienste' },
   { to: '/topology', ico: '⤳', label: 'Topologie' },
+  { to: '/metrics', ico: '◍', label: 'Metriken' },
   { to: '/inventory', ico: '▤', label: 'Inventar' },
   { to: '/analyze', ico: '✦', label: 'KI-Analyse' },
   { to: '/automate', ico: '⚡', label: 'Automationen' },
@@ -82,6 +84,7 @@ export default function App() {
             <Route path="/host/:key/c/:name" element={<ContainerDetail />} />
             <Route path="/host/:key/terminal" element={<Terminal />} />
             <Route path="/topology" element={<Topology />} />
+            <Route path="/metrics" element={<Metrics />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/analyze" element={<Analyze />} />
             <Route path="/automate" element={<Automate />} />
@@ -102,6 +105,7 @@ function titleFor(path) {
   if (path.includes('/c/')) return 'Container'
   if (path.startsWith('/host/')) return 'Service'
   if (path.startsWith('/topology')) return 'Topologie'
+  if (path.startsWith('/metrics')) return 'Metriken'
   if (path.startsWith('/inventory')) return 'Inventar'
   if (path.startsWith('/analyze')) return 'KI-Analyse'
   if (path.startsWith('/automate')) return 'Automationen'
