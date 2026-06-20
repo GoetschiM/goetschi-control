@@ -253,6 +253,9 @@ button { font-family: inherit; }
 .groupby { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .ai-answer .ai-text { white-space: pre-wrap; line-height: 1.65; font-size: 14px; }
 
+/* ---- grafana embed ---- */
+.grafana-frame { width: 100%; height: 78vh; border: 1px solid var(--line); border-radius: var(--radius); background: #0b0e14; }
+
 /* ---- metrics charts ---- */
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
 .chart-card { background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }

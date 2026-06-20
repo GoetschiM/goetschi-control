@@ -41,6 +41,7 @@ PROXMOX_USER = os.environ.get('PROXMOX_USER', 'root@pam')
 PROXMOX_PASS = os.environ.get('PROXMOX_PASS', '')
 PROMETHEUS   = os.environ.get('PROMETHEUS_URL', 'http://10.0.60.110:9090')
 LOKI_URL     = os.environ.get('LOKI_URL', 'http://10.0.60.110:3100')
+GRAFANA_URL  = os.environ.get('GRAFANA_URL', 'http://10.0.60.110:3000')
 DOKPLOY_URL  = os.environ.get('DOKPLOY_URL', 'http://10.0.60.121:3000')
 DOKPLOY_KEY  = os.environ.get('DOKPLOY_API_KEY', '')
 LITELLM_URL  = os.environ.get('LITELLM_URL', 'http://10.0.60.152:4000')
@@ -2505,6 +2506,17 @@ def api_me_password():
     conn.commit(); conn.close()
     _audit(request.remote_addr, 'password_change', u, '')
     return jsonify({'ok': True})
+
+@app.route('/api/grafana/dashboards')
+@login_required
+def api_grafana_dashboards():
+    try:
+        r = urllib.request.urlopen(f'{GRAFANA_URL}/api/search?type=dash-db', timeout=5)
+        data = json.loads(r.read())
+        dbs = [{'uid': d.get('uid'), 'title': d.get('title'), 'url': d.get('url')} for d in data]
+        return jsonify({'base': GRAFANA_URL, 'dashboards': dbs})
+    except Exception as e:
+        return jsonify({'base': GRAFANA_URL, 'dashboards': [], 'error': str(e)})
 
 @app.route('/api/integrations')
 @login_required

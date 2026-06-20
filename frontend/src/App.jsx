@@ -16,12 +16,14 @@ import Automate from './pages/Automate.jsx'
 import Events from './pages/Events.jsx'
 import Metrics from './pages/Metrics.jsx'
 import Integrations from './pages/Integrations.jsx'
+import Grafana from './pages/Grafana.jsx'
 
 const NAV = [
   { to: '/', ico: '▦', label: 'Übersicht', end: true },
   { to: '/board', ico: '◰', label: 'Dienste' },
   { to: '/topology', ico: '⤳', label: 'Topologie' },
   { to: '/metrics', ico: '◍', label: 'Metriken' },
+  { to: '/grafana', ico: '▨', label: 'Grafana' },
   { to: '/inventory', ico: '▤', label: 'Inventar' },
   { to: '/analyze', ico: '✦', label: 'KI-Analyse' },
   { to: '/automate', ico: '⚡', label: 'Automationen' },
@@ -92,6 +94,7 @@ export default function App() {
             <Route path="/host/:key/terminal" element={<Terminal />} />
             <Route path="/topology" element={<Topology />} />
             <Route path="/metrics" element={<Metrics />} />
+            <Route path="/grafana" element={<Grafana />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/analyze" element={<Analyze />} />
             <Route path="/automate" element={<Automate />} />
@@ -114,6 +117,7 @@ function titleFor(path) {
   if (path.startsWith('/host/')) return 'Service'
   if (path.startsWith('/topology')) return 'Topologie'
   if (path.startsWith('/metrics')) return 'Metriken'
+  if (path.startsWith('/grafana')) return 'Grafana'
   if (path.startsWith('/inventory')) return 'Inventar'
   if (path.startsWith('/analyze')) return 'KI-Analyse'
   if (path.startsWith('/automate')) return 'Automationen'
