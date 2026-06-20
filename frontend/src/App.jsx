@@ -12,6 +12,7 @@ import Analyze from './pages/Analyze.jsx'
 import Maintenance from './pages/Maintenance.jsx'
 import Board from './pages/Board.jsx'
 import Automate from './pages/Automate.jsx'
+import Events from './pages/Events.jsx'
 
 const NAV = [
   { to: '/', ico: '▦', label: 'Übersicht', end: true },
@@ -20,6 +21,7 @@ const NAV = [
   { to: '/inventory', ico: '▤', label: 'Inventar' },
   { to: '/analyze', ico: '✦', label: 'KI-Analyse' },
   { to: '/automate', ico: '⚡', label: 'Automationen' },
+  { to: '/events', ico: '◔', label: 'Aktivität' },
   { to: '/maintenance', ico: '◷', label: 'Wartung' },
   { to: '/alerts', ico: '◬', label: 'Alarme' },
   { to: '/settings', ico: '⚙', label: 'Einstellungen' },
@@ -83,6 +85,7 @@ export default function App() {
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/analyze" element={<Analyze />} />
             <Route path="/automate" element={<Automate />} />
+            <Route path="/events" element={<Events />} />
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/settings" element={<Settings />} />
@@ -102,6 +105,7 @@ function titleFor(path) {
   if (path.startsWith('/inventory')) return 'Inventar'
   if (path.startsWith('/analyze')) return 'KI-Analyse'
   if (path.startsWith('/automate')) return 'Automationen'
+  if (path.startsWith('/events')) return 'Aktivität'
   if (path.startsWith('/maintenance')) return 'Wartung'
   if (path.startsWith('/alerts')) return 'Alarme'
   if (path.startsWith('/settings')) return 'Einstellungen'
