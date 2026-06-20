@@ -48,7 +48,7 @@ Decisions (2026-06-20):
 
 ## Phase 4 — Pro features
 - [x] RBAC: users + roles (admin/viewer), user management, role-gated actions, audit log, API tokens
-- [ ] MFA / TOTP (2FA) — not yet
+- [x] MFA / TOTP (2FA) — opt-in per user, QR enrollment, two-step login
 - [ ] Per-user password change UI; finer-grained roles
 - [ ] Dokploy actions from RRM (delete/redeploy service) — needs Dokploy API token
 - [x] Backup success monitoring (Proxmox vzdump jobs, last-OK + failure highlighting)
