@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goetschi Labs — Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/vendor/xterm.css">
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="theme-color" content="#0a0e1a">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%25' stop-color='%236366f1'/><stop offset='100%25' stop-color='%23a78bfa'/></linearGradient></defs><circle cx='10' cy='24' r='5' fill='url(%23g)'/><circle cx='20' cy='14' r='4' fill='url(%23g)'/><circle cx='30' cy='20' r='3.5' fill='url(%23g)' opacity='.8'/><circle cx='26' cy='32' r='3' fill='url(%23g)' opacity='.7'/><line x1='10' y1='24' x2='20' y2='14' stroke='url(%23g)' stroke-width='2'/><line x1='20' y1='14' x2='30' y2='20' stroke='url(%23g)' stroke-width='2'/><line x1='30' y1='20' x2='26' y2='32' stroke='url(%23g)' stroke-width='2'/><line x1='20' y1='14' x2='26' y2='32' stroke='url(%23g)' stroke-width='1.5' opacity='.5'/></svg>">
+</head>
+<body>
+<div id="app">
+
+    <!-- ═══ SIDEBAR ═══ -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <!-- Goetschi Labs Logo (node-graph icon) -->
+            <div class="brand-logo">
+                <svg viewBox="0 0 44 38" width="38" height="32">
+                    <defs>
+                        <linearGradient id="lg" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#6366f1"/>
+                            <stop offset="100%" stop-color="#a78bfa"/>
+                        </linearGradient>
+                    </defs>
+                    <!-- Connection lines -->
+                    <line x1="8"  y1="26" x2="18" y2="14" stroke="url(#lg)" stroke-width="1.5" opacity=".45"/>
+                    <line x1="18" y1="14" x2="30" y2="10" stroke="url(#lg)" stroke-width="1.5" opacity=".45"/>
+                    <line x1="30" y1="10" x2="38" y2="18" stroke="url(#lg)" stroke-width="1.5" opacity=".45"/>
+                    <line x1="18" y1="14" x2="26" y2="26" stroke="url(#lg)" stroke-width="1.5" opacity=".45"/>
+                    <line x1="8"  y1="26" x2="16" y2="34" stroke="url(#lg)" stroke-width="1.5" opacity=".35"/>
+                    <line x1="26" y1="26" x2="38" y2="18" stroke="url(#lg)" stroke-width="1.5" opacity=".35"/>
+                    <!-- Nodes -->
+                    <circle cx="8"  cy="26" r="4"   fill="url(#lg)"/>
+                    <circle cx="18" cy="14" r="3.5" fill="url(#lg)"/>
+                    <circle cx="30" cy="10" r="3"   fill="url(#lg)" opacity=".9"/>
+                    <circle cx="38" cy="18" r="2.5" fill="url(#lg)" opacity=".75"/>
+                    <circle cx="26" cy="26" r="2.5" fill="url(#lg)" opacity=".8"/>
+                    <circle cx="16" cy="34" r="2"   fill="url(#lg)" opacity=".55"/>
+                </svg>
+            </div>
+            <div class="brand-text">
+                <div class="brand-name">Goetschi</div>
+                <div class="brand-labs">LABS</div>
+                <div class="brand-tagline">TECH. AI. IMPACT.</div>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-group-label">// monitor</div>
+            <a class="nav-item active" href="#" onclick="setSection('overview');return false" data-section="overview">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                <span>Overview</span>
+            </a>
+            <a class="nav-item" href="#" onclick="setSection('infra');return false" data-section="infra">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                <span>Infrastructure</span>
+                <span class="nav-badge" id="nb-infra">—</span>
+            </a>
+            <a class="nav-item" href="#" onclick="setSection('app');return false" data-section="app">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                <span>Applications</span>
+                <span class="nav-badge" id="nb-app">—</span>
+            </a>
+            <a class="nav-item" href="#" onclick="setSection('ai');return false" data-section="ai">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M1 12h3M20 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                <span>AI Services</span>
+                <span class="nav-badge" id="nb-ai">—</span>
+            </a>
+            <div class="nav-group-label">// manage</div>
+            <a class="nav-item" href="#" onclick="setSection('agent');return false" data-section="agent">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9.5 2a.5.5 0 0 1 5 0M12 7v5l3 3M12 22a9 9 0 1 0 0-18 9 9 0 0 0 0 18z"/></svg>
+                <span>Agents</span>
+                <span class="nav-badge" id="nb-agent">—</span>
+            </a>
+            <a class="nav-item" href="#" onclick="setSection('voice');return false" data-section="voice">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.41 2 2 0 0 1 3.58 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 8.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                <span>Voice</span>
+                <span class="nav-badge" id="nb-voice">—</span>
+            </a>
+            <a class="nav-item" href="#" onclick="setSection('core');return false" data-section="core">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <span>Core</span>
+                <span class="nav-badge" id="nb-core">—</span>
+            </a>
+            <a class="nav-item" href="#" onclick="setSection('flow');return false" data-section="flow">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/><path d="M7 12h4l5-5M7 12h4l5 5"/></svg>
+                <span>Topology</span>
+            </a>
+            <div class="nav-group-label">// system</div>
+            <a class="nav-item" href="#" onclick="setSection('automations');return false" data-section="automations">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                <span>Automations</span>
+            </a>
+            <a class="nav-item" href="#" onclick="setSection('logs');return false" data-section="logs">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <span>Logs</span>
+            </a>
+            <a class="nav-item" href="#" onclick="setSection('settings');return false" data-section="settings">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Settings</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="sidebar-quicklinks">
+                <a class="sql-btn" href="https://goetschi.atlassian.net" target="_blank" title="Atlassian">Jira</a>
+                <a class="sql-btn" href="http://10.0.60.110:3000" target="_blank" title="Grafana">Graf</a>
+                <a class="sql-btn" href="https://10.0.60.10:8006" target="_blank" title="Proxmox">PVE</a>
+                <a class="sql-btn" href="http://10.0.60.110:9090" target="_blank" title="Prometheus">Prom</a>
+                <a class="sql-btn" href="http://10.0.60.121:3000" target="_blank" title="Dokploy">Dply</a>
+            </div>
+            <a href="/logout" class="sidebar-user">
+                <div class="user-avatar">{{ username[0]|upper }}</div>
+                <div class="user-info">
+                    <div class="user-name">{{ username }}</div>
+                    <div class="user-role">root · admin</div>
+                </div>
+            </a>
+        </div>
+    </aside>
+
+    <!-- ═══ MAIN ═══ -->
+    <div class="main-wrap">
+        <header class="topbar">
+            <div class="topbar-breadcrumb">GL<span>/</span><span id="topbar-section">overview</span></div>
+            <div class="topbar-search">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="text" placeholder="search host, ip, service…" id="search-input" oninput="onSearch(this.value)">
+            </div>
+            <div class="topbar-right">
+                <!-- Alert badge -->
+                <div class="alert-wrap" onclick="toggleAlertPanel()">
+                    <span class="alert-badge crit" id="alert-badge" style="display:none">0</span>
+                    <div id="alert-panel" class="alert-panel hidden"></div>
+                </div>
+                <div class="topbar-live">
+                    <span class="live-dot"></span>LIVE
+                </div>
+                <div class="topbar-time" id="topbar-time">--:--:--</div>
+            </div>
+        </header>
+
+        <div class="content">
+            <!-- Stats -->
+            <div class="stats-row">
+                <div class="stat-card s-online" onclick="setSection('overview')">
+                    <div class="stat-num" id="stat-online">—</div>
+                    <div class="stat-lbl">Online</div>
+                    <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <div class="stat-accent"></div>
+                </div>
+                <div class="stat-card s-warn" onclick="setSection('overview')">
+                    <div class="stat-num" id="stat-degraded">—</div>
+                    <div class="stat-lbl">Degraded</div>
+                    <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <div class="stat-accent"></div>
+                </div>
+                <div class="stat-card s-offline" onclick="setSection('overview')">
+                    <div class="stat-num" id="stat-offline">—</div>
+                    <div class="stat-lbl">Offline</div>
+                    <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    <div class="stat-accent"></div>
+                </div>
+                <div class="stat-card s-blue">
+                    <div class="stat-num" id="stat-latency">—</div>
+                    <div class="stat-lbl">Avg RTT</div>
+                    <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <div class="stat-accent"></div>
+                </div>
+                <div class="stat-card s-blue" style="min-width:90px">
+                    <div class="stat-num" style="font-size:18px">
+                        <span id="stat-wifi-clients">—</span><span style="font-size:10px;opacity:.5"> W</span>
+                        <span style="font-size:10px;opacity:.4"> / </span>
+                        <span id="stat-wired-clients">—</span><span style="font-size:10px;opacity:.5"> E</span>
+                    </div>
+                    <div class="stat-lbl">Network Clients</div>
+                    <div style="font-size:9px;color:var(--txt-dim);margin-top:2px">
+                        rx:<span id="stat-wan-rx">—</span> tx:<span id="stat-wan-tx">—</span>
+                    </div>
+                    <div class="stat-accent"></div>
+                </div>
+                <div class="stat-health">
+                    <div class="health-wrap">
+                        <svg class="health-svg" viewBox="0 0 56 56">
+                            <circle cx="28" cy="28" r="22" fill="none" stroke="#151c2e" stroke-width="5"/>
+                            <circle cx="28" cy="28" r="22" fill="none" stroke="url(#hg)" stroke-width="5"
+                                stroke-dasharray="138" stroke-dashoffset="138" stroke-linecap="round"
+                                transform="rotate(-90 28 28)" id="health-arc"/>
+                            <defs>
+                                <linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#6366f1"/>
+                                    <stop offset="100%" stop-color="#10b981"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                        <div class="health-num" id="health-pct">—</div>
+                    </div>
+                    <div class="health-label">INFRA<br>HEALTH</div>
+                </div>
+            </div>
+
+            <!-- Grid View -->
+            <div id="grid-view">
+                <div class="section-hdr">
+                    <span class="section-title" id="section-title-txt">// all_hosts</span>
+                    <span class="section-sub" id="svc-count"></span>
+                    <div class="section-line"></div>
+                    <span class="section-sub" id="discovery-status"></span>
+                </div>
+
+                <div id="discovery-banner" class="discovery-banner hidden">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                    <span id="discovery-msg">Scanning network…</span>
+                </div>
+
+                <div class="services-grid" id="services-grid">
+                    <div class="svc-loading">// initializing scan…</div>
+                </div>
+
+                <div class="metrics-row">
+                    <div class="metric-card">
+                        <div class="metric-hdr">
+                            <span class="metric-title">net_traffic</span>
+                            <span class="metric-val" id="m-network">—</span>
+                        </div>
+                        <div class="mini-chart" id="chart-net"></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-hdr">
+                            <span class="metric-title">cpu_avg</span>
+                            <span class="metric-val" id="m-cpu">—</span>
+                        </div>
+                        <div class="mini-chart" id="chart-cpu"></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-hdr">
+                            <span class="metric-title">ram_avg</span>
+                            <span class="metric-val" id="m-ram">—</span>
+                        </div>
+                        <div class="mini-chart" id="chart-ram"></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-hdr">
+                            <span class="metric-title">pve_mem</span>
+                            <span class="metric-val" id="m-storage">—</span>
+                        </div>
+                        <div class="storage-track"><div class="storage-fill" id="storage-fill"></div></div>
+                        <div class="storage-detail" id="m-storage-detail">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metrics View (replaces Flow) -->
+            <div id="flow-view" class="hidden">
+                <div class="section-hdr">
+                    <span class="section-title">// metrics_overview</span>
+                    <span class="section-sub">sorted by CPU · click for detail</span>
+                    <div class="section-line"></div>
+                </div>
+                <div class="mx-grid" id="metrics-grid-view"></div>
+            </div>
+
+            <!-- Automations View -->
+            <div id="automations-view" class="hidden page-view">
+                <div class="section-hdr">
+                    <span class="section-title">// automations</span>
+                    <div class="section-line"></div>
+                    <button class="pg-action-btn" onclick="showCronForm()">+ new job</button>
+                    <button class="pg-action-btn" onclick="loadAutomations()">↺ refresh</button>
+                </div>
+
+                <!-- New Cron Form (hidden by default) -->
+                <div id="cron-form" class="pg-card hidden" style="margin-bottom:0">
+                    <div class="pg-card-hdr">
+                        <span class="pg-card-title">// new_job</span>
+                        <button class="pg-action-btn" onclick="hideCronForm()">✕ cancel</button>
+                    </div>
+                    <div class="cron-form-grid">
+                        <div class="cron-form-row">
+                            <label class="cron-label">name</label>
+                            <input class="cron-input" id="cf-name" placeholder="apt-upgrade-nova" />
+                        </div>
+                        <div class="cron-form-row">
+                            <label class="cron-label">host</label>
+                            <select class="cron-input" id="cf-host"></select>
+                        </div>
+                        <div class="cron-form-row">
+                            <label class="cron-label">preset</label>
+                            <select class="cron-input" id="cf-predefined" onchange="usePredefinedCmd()">
+                                <option value="">── Vorgefertigte Befehle ──</option>
+                            </select>
+                        </div>
+                        <div class="cron-form-row">
+                            <label class="cron-label">command</label>
+                            <input class="cron-input" id="cf-cmd" placeholder="apt update && apt upgrade -y" style="flex:1" />
+                        </div>
+                        <div class="cron-form-row">
+                            <label class="cron-label">interval</label>
+                            <select class="cron-input" id="cf-interval">
+                                <option value="10">10 min</option>
+                                <option value="30">30 min</option>
+                                <option value="60" selected>1 hour</option>
+                                <option value="360">6 hours</option>
+                                <option value="720">12 hours</option>
+                                <option value="1440">24 hours</option>
+                                <option value="10080">weekly</option>
+                            </select>
+                        </div>
+                        <div class="cron-form-row">
+                            <label class="cron-label"></label>
+                            <button class="cron-save-btn" onclick="saveCron()">save &amp; schedule</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pg-card">
+                    <div class="pg-card-hdr">
+                        <span class="pg-card-title">// scheduled_jobs</span>
+                        <span class="pg-badge" id="cron-count">—</span>
+                    </div>
+                    <table class="data-table" id="crons-table">
+                        <thead><tr>
+                            <th>name</th><th>host</th><th>command</th><th>interval</th><th>last run</th><th>status</th><th>actions</th>
+                        </tr></thead>
+                        <tbody id="crons-tbody">
+                            <tr><td colspan="7" class="table-empty">// no jobs yet</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Last result panel -->
+                <div class="pg-card" id="cron-result-card" style="display:none">
+                    <div class="pg-card-hdr">
+                        <span class="pg-card-title" id="cron-result-title">// last_output</span>
+                        <button class="pg-action-btn" onclick="document.getElementById('cron-result-card').style.display='none'">✕</button>
+                    </div>
+                    <pre id="cron-result-output" class="cron-output"></pre>
+                </div>
+            </div>
+
+            <!-- Logs View -->
+            <div id="logs-view" class="hidden page-view">
+                <div class="section-hdr">
+                    <span class="section-title">// audit_log</span>
+                    <div class="section-line"></div>
+                    <div class="log-filters">
+                        <button class="log-filter active" onclick="filterLogs('all',this)">all</button>
+                        <button class="log-filter" onclick="filterLogs('ssh',this)">ssh</button>
+                        <button class="log-filter" onclick="filterLogs('restart',this)">restart</button>
+                        <button class="log-filter" onclick="filterLogs('login',this)">login</button>
+                        <button class="log-filter nc" onclick="showNcLogs(this)">nanoclaw</button>
+                        <button class="log-filter" onclick="showLokiSearch(this)" id="btn-loki-search">loki search</button>
+                    </div>
+                    <button class="pg-action-btn" onclick="loadLogs()">↺ refresh</button>
+                </div>
+                <!-- Loki search panel (hidden by default) -->
+                <div id="loki-search-panel" class="pg-card hidden" style="margin-bottom:8px">
+                    <div class="pg-card-hdr"><span class="pg-card-title">// loki_search</span></div>
+                    <div style="display:flex;gap:8px;padding:4px 0">
+                        <input id="loki-search-q" class="cron-input" placeholder="error, nginx, timeout…" style="flex:1" onkeydown="if(event.key==='Enter')searchLoki()">
+                        <button class="pg-action-btn" onclick="searchLoki()">suchen</button>
+                        <button class="pg-action-btn" onclick="hideLokiSearch()">✕</button>
+                    </div>
+                    <div id="loki-search-results" style="max-height:300px;overflow-y:auto;margin-top:4px"></div>
+                </div>
+                <div class="pg-card">
+                    <table class="data-table" id="audit-table">
+                        <thead><tr>
+                            <th>timestamp</th><th>user</th><th>action</th><th>host</th><th>detail</th>
+                        </tr></thead>
+                        <tbody id="audit-tbody">
+                            <tr><td colspan="5" class="table-empty">// loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Settings View -->
+            <div id="settings-view" class="hidden page-view">
+                <div class="section-hdr">
+                    <span class="section-title">// settings</span>
+                    <div class="section-line"></div>
+                </div>
+                <div class="pg-cols">
+                    <div class="pg-col-main">
+
+                        <!-- Agent Install -->
+                        <div class="pg-card">
+                            <div class="pg-card-hdr">
+                                <span class="pg-card-title">// gl_agent · install</span>
+                                <span class="pg-badge">v1.0 · port 9998</span>
+                            </div>
+                            <p class="pg-desc">Lightweight monitoring agent (stdlib Python). Delivers CPU / RAM / disk / Docker metrics and remote restart via Bearer token auth.</p>
+                            <div class="install-tabs" id="install-tabs">
+                                <button class="install-tab active" onclick="selectInstallTab('linux',this)">Linux / LXC</button>
+                                <button class="install-tab" onclick="selectInstallTab('mac',this)">macOS</button>
+                                <button class="install-tab" onclick="selectInstallTab('win',this)">Windows</button>
+                            </div>
+                            <div id="install-linux" class="install-block">
+                                <div class="install-row">
+                                    <span class="install-label">token</span>
+                                    <code id="agent-token-val" class="install-val">—</code>
+                                    <button class="copy-btn" onclick="copyText(document.getElementById('agent-token-val').textContent)">copy</button>
+                                </div>
+                                <div class="install-row">
+                                    <span class="install-label">curl</span>
+                                    <code id="install-cmd-linux" class="install-val install-cmd">—</code>
+                                    <button class="copy-btn" onclick="copyText(document.getElementById('install-cmd-linux').textContent)">copy</button>
+                                </div>
+                            </div>
+                            <div id="install-mac" class="install-block hidden">
+                                <div class="install-row">
+                                    <span class="install-label">brew</span>
+                                    <code class="install-val">brew install python3  <span style="color:var(--txt-muted)"># if needed</span></code>
+                                </div>
+                                <div class="install-row">
+                                    <span class="install-label">curl</span>
+                                    <code id="install-cmd-mac" class="install-val install-cmd">—</code>
+                                    <button class="copy-btn" onclick="copyText(document.getElementById('install-cmd-mac').textContent)">copy</button>
+                                </div>
+                            </div>
+                            <div id="install-win" class="install-block hidden">
+                                <div class="install-row">
+                                    <span class="install-label">ps1</span>
+                                    <code id="install-cmd-win" class="install-val install-cmd">—</code>
+                                    <button class="copy-btn" onclick="copyText(document.getElementById('install-cmd-win').textContent)">copy</button>
+                                </div>
+                                <p class="pg-desc" style="margin-top:8px">Run as Administrator in PowerShell.</p>
+                            </div>
+                        </div>
+
+                        <!-- Connected Agents Table -->
+                        <div class="pg-card">
+                            <div class="pg-card-hdr">
+                                <span class="pg-card-title">// connected_agents</span>
+                                <button class="pg-action-btn" onclick="loadSettings()">↺ refresh</button>
+                            </div>
+                            <table class="data-table" id="agents-table">
+                                <thead><tr>
+                                    <th>host</th><th>ip</th><th>cpu</th><th>ram</th><th>disk</th><th>uptime</th><th>status</th>
+                                </tr></thead>
+                                <tbody id="agents-tbody">
+                                    <tr><td colspan="7" class="table-empty">// loading agents…</td></tr>
+                                </tbody>
+                            </table>
+                            <div id="category-editor"></div>
+                        </div>
+
+                    </div>
+                    <div class="pg-col-side">
+
+                        <!-- API Tokens (per-agent) -->
+                        <div class="pg-card">
+                            <div class="pg-card-hdr">
+                                <span class="pg-card-title">// api_tokens</span>
+                                <button class="pg-action-btn" onclick="showCreateTokenForm()">+ token</button>
+                            </div>
+                            <div id="api-token-form" class="hidden" style="padding:8px 0;display:flex;gap:8px;align-items:center">
+                                <input id="new-token-name" class="cron-input" placeholder="z.B. nova, hermes" style="flex:1;padding:4px 8px;font-size:11px">
+                                <button class="pg-action-btn" onclick="createApiToken()">erstellen</button>
+                                <button class="pg-action-btn" onclick="hideCreateTokenForm()">✕</button>
+                            </div>
+                            <div id="api-token-list" class="token-list">
+                                <div class="table-empty">// loading…</div>
+                            </div>
+                            <p class="pg-desc" style="margin-top:6px;font-size:9px">Token im Header senden: <code>X-GL-Token: &lt;token&gt;</code></p>
+                        </div>
+
+                        <!-- Legacy Hermes Tokens -->
+                        <div class="pg-card">
+                            <div class="pg-card-hdr">
+                                <span class="pg-card-title">// hermes_tokens (env)</span>
+                            </div>
+                            <div id="token-list" class="token-list">
+                                <div class="table-empty">No tokens configured.</div>
+                            </div>
+                            <p class="pg-desc" style="margin-top:10px">Set <code>GL_HERMES_KEY_agentname=token</code> env var to register an agent.</p>
+                        </div>
+
+                        <!-- Telegram Alerts -->
+                        <div class="pg-card">
+                            <div class="pg-card-hdr">
+                                <span class="pg-card-title">// telegram_alerts</span>
+                                <span class="pg-badge" id="tg-status-badge">—</span>
+                            </div>
+                            <div id="tg-status-row" style="margin-bottom:8px;font-size:10px;color:var(--txt-dim)">// loading…</div>
+                            <p class="pg-desc" style="margin-bottom:8px">Telegram Bot sendet Alerts für: offline hosts, CPU/Disk &gt;90%, SSL &lt;15 Tage, Predictive alerts.</p>
+                            <div class="api-rows" style="margin-bottom:8px">
+                                <div class="api-row"><code class="api-method">env</code><code class="api-path">TELEGRAM_TOKEN</code><span class="api-desc">Bot-Token von @BotFather</span></div>
+                                <div class="api-row"><code class="api-method">env</code><code class="api-path">TELEGRAM_CHAT_ID</code><span class="api-desc">Chat-ID (von @userinfobot)</span></div>
+                            </div>
+                            <button class="pg-action-btn" onclick="testTelegram()" id="tg-test-btn">📨 Test senden</button>
+                            <span id="tg-test-result" style="font-size:10px;margin-left:8px"></span>
+                        </div>
+
+                        <!-- Backup Monitor -->
+                        <div class="pg-card">
+                            <div class="pg-card-hdr">
+                                <span class="pg-card-title">// proxmox_backups</span>
+                                <button class="pg-action-btn" onclick="loadBackupStatus()">↺</button>
+                            </div>
+                            <div id="backup-list">
+                                <div class="table-empty">// loading…</div>
+                            </div>
+                        </div>
+
+                        <!-- Agent API Reference -->
+                        <div class="pg-card">
+                            <div class="pg-card-hdr">
+                                <span class="pg-card-title">// agent_endpoints</span>
+                            </div>
+                            <div class="api-rows">
+                                <div class="api-row"><code class="api-method">GET</code><code class="api-path">/</code><span class="api-desc">status + metrics</span></div>
+                                <div class="api-row"><code class="api-method">GET</code><code class="api-path">/docker</code><span class="api-desc">container list</span></div>
+                                <div class="api-row"><code class="api-method">GET</code><code class="api-path">/logs</code><span class="api-desc">journal (last 50)</span></div>
+                                <div class="api-row"><code class="api-method post">POST</code><code class="api-path">/restart</code><span class="api-desc">restart svc/container</span></div>
+                            </div>
+                            <div class="install-row" style="margin-top:10px">
+                                <span class="install-label">auth</span>
+                                <code class="install-val">Authorization: Bearer &lt;token&gt;</code>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ RIGHT PANEL ═══ -->
+    <aside class="right-panel">
+        <div class="rp-card">
+            <div class="rp-card-hdr">
+                <span class="rp-card-title">// lxc_status</span>
+                <span class="rp-badge" id="lxc-badge">—</span>
+            </div>
+            <div class="lxc-list" id="lxc-list">
+                <div class="svc-loading">loading…</div>
+            </div>
+            <div class="rp-card-ftr">
+                <a href="https://10.0.60.10:8006" target="_blank" class="rp-link">→ proxmox ui</a>
+            </div>
+        </div>
+
+        <div class="rp-card rp-ai-card">
+            <div class="rp-card-hdr">
+                <div class="ai-live-dot"></div>
+                <span class="rp-card-title">// ai_stack</span>
+                <span class="ai-status-badge" id="ai-badge">ACTIVE</span>
+            </div>
+            <div class="ai-body">
+                <div class="ai-avatar-wrap">
+                    <svg viewBox="0 0 52 52" width="48" height="48">
+                        <defs>
+                            <linearGradient id="aig" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#6366f1"/>
+                                <stop offset="100%" stop-color="#a78bfa"/>
+                            </linearGradient>
+                        </defs>
+                        <!-- Mini node graph -->
+                        <line x1="10" y1="30" x2="20" y2="18" stroke="url(#aig)" stroke-width="1.5" opacity=".4"/>
+                        <line x1="20" y1="18" x2="34" y2="14" stroke="url(#aig)" stroke-width="1.5" opacity=".4"/>
+                        <line x1="34" y1="14" x2="42" y2="24" stroke="url(#aig)" stroke-width="1.5" opacity=".4"/>
+                        <line x1="20" y1="18" x2="28" y2="32" stroke="url(#aig)" stroke-width="1.5" opacity=".4"/>
+                        <circle cx="10" cy="30" r="4"   fill="url(#aig)"/>
+                        <circle cx="20" cy="18" r="3.5" fill="url(#aig)"/>
+                        <circle cx="34" cy="14" r="3"   fill="url(#aig)" opacity=".9"/>
+                        <circle cx="42" cy="24" r="2.5" fill="url(#aig)" opacity=".75"/>
+                        <circle cx="28" cy="32" r="2.5" fill="url(#aig)" opacity=".7"/>
+                    </svg>
+                </div>
+                <div class="ai-services">
+                    <div class="ai-svc-row">
+                        <span class="ai-svc-dot" style="background:#10b981"></span>
+                        <span class="ai-svc-name">LiteLLM</span>
+                        <span class="ai-svc-stat" id="ai-nova">—</span>
+                    </div>
+                    <div class="ai-svc-row">
+                        <span class="ai-svc-dot" style="background:#6366f1"></span>
+                        <span class="ai-svc-name">MCPHub</span>
+                        <span class="ai-svc-stat" id="ai-mcp">—</span>
+                    </div>
+                    <div class="ai-svc-row">
+                        <span class="ai-svc-dot" style="background:#a78bfa"></span>
+                        <span class="ai-svc-name">AI Router</span>
+                        <span class="ai-svc-stat" id="ai-ollama">—</span>
+                    </div>
+                    <div class="ai-svc-row">
+                        <span class="ai-svc-dot" style="background:#06b6d4"></span>
+                        <span class="ai-svc-name">Hermes</span>
+                        <span class="ai-svc-stat" id="ai-router">—</span>
+                    </div>
+                </div>
+            </div>
+            <a href="http://10.0.60.152:4000" target="_blank" class="ai-open-btn">
+                GOETSCHI AI ↗
+            </a>
+        </div>
+
+        <div class="rp-footer" id="rp-footer">// last_sync: —</div>
+    </aside>
+</div>
+
+<div id="detail-panel" class="hidden"></div>
+
+<!-- SSH Terminal Modal -->
+<div id="ssh-modal" class="ssh-modal hidden">
+    <div class="ssh-backdrop" onclick="closeSSH()"></div>
+    <div class="ssh-box">
+        <div class="ssh-box-hdr">
+            <div class="ssh-title-left">
+                <span class="ssh-live-dot"></span>
+                <span class="ssh-host-name" id="ssh-host-label">terminal</span>
+                <span class="ssh-host-ip" id="ssh-host-ip"></span>
+            </div>
+            <div class="ssh-title-right">
+                <span class="ssh-badge">root</span>
+                <button class="ssh-btn-close" onclick="closeSSH()">✕ disconnect</button>
+            </div>
+        </div>
+        <div id="ssh-terminal-wrap">
+            <div id="ssh-terminal"></div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/vendor/xterm.js"></script>
+<script src="/static/vendor/xterm-addon-fit.js"></script>
+<script src="/static/vendor/socket.io.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

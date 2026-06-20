@@ -1,0 +1,25 @@
+{
+  "name": "Goetschi Labs Dashboard",
+  "short_name": "GL Dashboard",
+  "description": "Infrastruktur-Dashboard für Goetschi Labs",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e1a",
+  "theme_color": "#0a0e1a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' rx='32' fill='%230a0e1a'/><circle cx='48' cy='120' r='22' fill='%236366f1'/><circle cx='96' cy='68' r='18' fill='%236366f1'/><circle cx='144' cy='96' r='16' fill='%236366f1' opacity='.85'/><line x1='48' y1='120' x2='96' y2='68' stroke='%236366f1' stroke-width='8'/><line x1='96' y1='68' x2='144' y2='96' stroke='%236366f1' stroke-width='8'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='80' fill='%230a0e1a'/><circle cx='128' cy='320' r='56' fill='%236366f1'/><circle cx='256' cy='180' r='48' fill='%236366f1'/><circle cx='384' cy='256' r='40' fill='%236366f1' opacity='.85'/><line x1='128' y1='320' x2='256' y2='180' stroke='%236366f1' stroke-width='20'/><line x1='256' y1='180' x2='384' y2='256' stroke='%236366f1' stroke-width='20'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["utilities", "productivity"]
+}

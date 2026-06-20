@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goetschi Labs &mdash; Login</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-bg">
+    <div class="login-card">
+
+        <div class="login-brand">
+            <div class="login-brand-logo">
+                <svg viewBox="0 0 40 40" width="52" height="52">
+                    <defs>
+                        <linearGradient id="gl-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%"   stop-color="#6366f1"/>
+                            <stop offset="100%" stop-color="#a855f7"/>
+                        </linearGradient>
+                    </defs>
+                    <rect x="2" y="2" width="36" height="36" rx="8"
+                          fill="none" stroke="url(#gl-grad)" stroke-width="2.5"/>
+                    <text x="20" y="26" text-anchor="middle"
+                          fill="url(#gl-grad)" font-size="18" font-weight="700"
+                          font-family="sans-serif">GL</text>
+                </svg>
+            </div>
+            <div class="login-brand-name">Goetschi Labs</div>
+            <div class="login-brand-labs">RMM Dashboard</div>
+            <div class="login-brand-sub">Infrastruktur-Dashboard</div>
+        </div>
+
+        <form class="login-form" action="/login" method="POST">
+            <div>
+                <label class="login-label" for="username">Benutzername</label>
+                <input class="login-input" type="text" id="username" name="username"
+                       placeholder="Benutzername" required autofocus autocomplete="username">
+            </div>
+
+            <div>
+                <label class="login-label" for="password">Passwort</label>
+                <input class="login-input" type="password" id="password" name="password"
+                       placeholder="Passwort" required autocomplete="current-password">
+            </div>
+
+            {% if error %}
+            <div class="login-error">{{ error }}</div>
+            {% endif %}
+
+            <button type="submit" class="login-btn">Anmelden &#8594;</button>
+        </form>
+
+        <div style="text-align:center;margin-top:24px;font-family:var(--mono);
+                    font-size:9px;color:var(--txt-muted);opacity:.4;letter-spacing:.08em;">
+            Hermes Agent Dashboard v2 &mdash; CT120
+        </div>
+
+    </div>
+
+    <script>
+        // Auto-redirect if already authenticated
+        fetch('/api/session-check')
+            .then(r => r.json())
+            .then(d => { if (d.authenticated) window.location.href = '/'; })
+            .catch(() => {});
+    </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Secrets / runtime data — NEVER commit
+.env
+dashboard.env
+*.db
+*.sqlite
+data/
+logs/
+config/
+bleve-indexes/
+acme.json
+certificates/
+
+# Backups / archives
+*.tgz
+*.bak
+*.bak*
