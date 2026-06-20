@@ -2,7 +2,7 @@
 """Goetschi Labs Dashboard v7 — Auto-Discovery Edition
 Proxmox Auto-Discovery · Prometheus · Loki · Port Scan · RMM
 """
-from flask import Flask, render_template, jsonify, request, redirect, url_for, session
+from flask import Flask, render_template, jsonify, request, redirect, url_for, session, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_socketio import SocketIO, emit
 from functools import wraps
@@ -1751,6 +1751,11 @@ def logout():
 @app.route('/')
 @login_required
 def index():
+    # New React SPA (Vite build) lives in static/spa. Falls back to the legacy
+    # template if the build isn't present (e.g. local dev without a frontend build).
+    spa = os.path.join(app.static_folder, 'spa', 'index.html')
+    if os.path.exists(spa):
+        return send_from_directory(os.path.join(app.static_folder, 'spa'), 'index.html')
     return render_template('index.html', username=session.get('username'))
 
 @app.route('/api/live')

@@ -14,6 +14,10 @@ bleve-indexes/
 acme.json
 certificates/
 
+# Frontend build output (built in Docker, not committed)
+static/spa/
+node_modules/
+
 # Backups / archives
 *.tgz
 *.bak

@@ -1,0 +1,10 @@
+**/node_modules
+frontend/dist
+static/spa
+.git
+*.tgz
+*.bak*
+__pycache__
+*.pyc
+dashboard.env
+*.db
