@@ -15,7 +15,14 @@ export default function Settings() {
   const [nu, setNu] = useState({ username: '', password: '', role: 'viewer' })
   const [mfaSetup, setMfaSetup] = useState(null)
   const [mfaCode, setMfaCode] = useState('')
+  const [pw, setPw] = useState({ old: '', new: '' })
   const [msg, setMsg] = useState('')
+
+  async function changePw() {
+    if (!pw.old || !pw.new) return flash('Beide Felder nötig')
+    try { await postJSON('/api/me/password', pw); setPw({ old: '', new: '' }); flash('Passwort geändert') }
+    catch (e) { flash('Fehler: ' + e.message) }
+  }
 
   async function startMfa() { try { setMfaSetup(await postJSON('/api/mfa/setup')) } catch (e) { flash('Fehler: ' + e.message) } }
   async function confirmMfa() {
@@ -98,6 +105,15 @@ export default function Settings() {
         ) : (
           <div className="actions"><span className="muted">2FA ist nicht aktiv</span><button className="btn primary" onClick={startMfa}>2FA aktivieren</button></div>
         )}
+      </div>
+
+      <div className="group-title">Passwort ändern</div>
+      <div className="panel" style={{ marginBottom: 22 }}>
+        <div className="actions">
+          <input className="inp" type="password" placeholder="Aktuelles Passwort" value={pw.old} onChange={e => setPw({ ...pw, old: e.target.value })} />
+          <input className="inp" type="password" placeholder="Neues Passwort" value={pw.new} onChange={e => setPw({ ...pw, new: e.target.value })} />
+          <button className="btn primary" onClick={changePw}>Ändern</button>
+        </div>
       </div>
 
       {me?.role === 'admin' && (

@@ -15,6 +15,7 @@ import Board from './pages/Board.jsx'
 import Automate from './pages/Automate.jsx'
 import Events from './pages/Events.jsx'
 import Metrics from './pages/Metrics.jsx'
+import Integrations from './pages/Integrations.jsx'
 
 const NAV = [
   { to: '/', ico: '▦', label: 'Übersicht', end: true },
@@ -26,6 +27,7 @@ const NAV = [
   { to: '/automate', ico: '⚡', label: 'Automationen' },
   { to: '/events', ico: '◔', label: 'Aktivität' },
   { to: '/maintenance', ico: '◷', label: 'Wartung' },
+  { to: '/integrations', ico: '⧉', label: 'Integrationen' },
   { to: '/alerts', ico: '◬', label: 'Alarme' },
   { to: '/settings', ico: '⚙', label: 'Einstellungen' },
 ]
@@ -95,6 +97,7 @@ export default function App() {
             <Route path="/automate" element={<Automate />} />
             <Route path="/events" element={<Events />} />
             <Route path="/maintenance" element={<Maintenance />} />
+            <Route path="/integrations" element={<Integrations />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
@@ -116,6 +119,7 @@ function titleFor(path) {
   if (path.startsWith('/automate')) return 'Automationen'
   if (path.startsWith('/events')) return 'Aktivität'
   if (path.startsWith('/maintenance')) return 'Wartung'
+  if (path.startsWith('/integrations')) return 'Integrationen'
   if (path.startsWith('/alerts')) return 'Alarme'
   if (path.startsWith('/settings')) return 'Einstellungen'
   return 'Übersicht'

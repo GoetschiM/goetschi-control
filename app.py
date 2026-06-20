@@ -1492,7 +1492,8 @@ _INV_SCRIPT = (
     'echo "###OS"; grep -E "^(PRETTY_NAME|VERSION_ID|ID)=" /etc/os-release 2>/dev/null; '
     'echo "###PY"; python3 --version 2>&1; '
     'echo "###KERNEL"; uname -r; '
-    'echo "###PKGS"; dpkg-query -W 2>/dev/null'
+    'echo "###PKGS"; dpkg-query -W 2>/dev/null; '
+    'echo "###PIP"; pip3 list --format=freeze 2>/dev/null | head -400'
 )
 
 def _prox_exec(vmid, cmd, timeout=40):
@@ -1532,6 +1533,10 @@ def _parse_inventory(raw):
             parts = line.split('\t')
             if len(parts) >= 2:
                 info['packages'][parts[0].split(':')[0]] = parts[1].strip()
+        elif section == 'PIP' and '==' in line:
+            n, _, v = line.partition('==')
+            if n.strip():
+                info['packages']['pip:' + n.strip()] = v.strip()
     info['pkg_count'] = len(info['packages'])
     return info
 
@@ -2480,6 +2485,67 @@ def api_me():
     um = _user_mfa(session.get('username')) or {}
     return jsonify({'username': session.get('username'), 'role': session.get('role', 'admin'),
                     'mfa': um.get('enabled', False)})
+
+@app.route('/api/me/password', methods=['POST'])
+@login_required
+def api_me_password():
+    d = request.json or {}
+    old, new = d.get('old', ''), d.get('new', '')
+    u = session.get('username')
+    dbu = _user_get(u)
+    ok = (dbu and check_password_hash(dbu['pw_hash'], old)) or (u in USERS and check_password_hash(USERS[u], old))
+    if not ok:
+        return jsonify({'ok': False, 'error': 'Aktuelles Passwort falsch'}), 400
+    if len(new) < 4:
+        return jsonify({'ok': False, 'error': 'Neues Passwort zu kurz (min. 4)'}), 400
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('INSERT INTO users (username,pw_hash,role,created_at) VALUES (?,?,?,?) '
+                 'ON CONFLICT(username) DO UPDATE SET pw_hash=excluded.pw_hash',
+                 (u, generate_password_hash(new), (dbu or {}).get('role', 'admin'), time.strftime('%Y-%m-%dT%H:%M:%S')))
+    conn.commit(); conn.close()
+    _audit(request.remote_addr, 'password_change', u, '')
+    return jsonify({'ok': True})
+
+@app.route('/api/integrations')
+@login_required
+def api_integrations():
+    out = []
+    def add(name, ok, detail=''):
+        out.append({'name': name, 'ok': bool(ok), 'detail': str(detail)[:140]})
+    try:
+        nd = _px(f'/nodes/{PROXMOX_NODE}/status'); add('Proxmox', bool(nd and 'data' in nd), 'API erreichbar' if nd else 'kein Zugriff')
+    except Exception as e:
+        add('Proxmox', False, e)
+    try:
+        prom = get_prometheus(); add('Prometheus', bool(prom), f'{len(prom)} Hosts mit Metriken')
+    except Exception as e:
+        add('Prometheus', False, e)
+    try:
+        r = urllib.request.urlopen(f'{LOKI_URL}/ready', timeout=4).read().decode()
+        add('Loki', 'ready' in r.lower(), 'ready (Pipeline leer — promtail-Fix offen)')
+    except Exception as e:
+        add('Loki', False, e)
+    try:
+        u = get_unifi_data(); add('UniFi', bool(u), f"{len((u or {}).get('clients', []))} Clients" if u else 'kein Zugriff')
+    except Exception as e:
+        add('UniFi', False, e)
+    try:
+        ll = get_litellm_status(); add('LiteLLM', bool(ll and ll.get('alive')), 'alive' if ll and ll.get('alive') else 'down')
+    except Exception as e:
+        add('LiteLLM', False, e)
+    try:
+        ans = _llm_chat([{'role': 'user', 'content': 'sage ok'}], max_tokens=400); add('LLM Chat (gemini-flash)', bool(ans), 'antwortet' if ans else 'keine Antwort')
+    except Exception as e:
+        add('LLM Chat (gemini-flash)', False, e)
+    add('Dokploy API', bool(DOKPLOY_KEY), 'Token gesetzt' if DOKPLOY_KEY else 'kein gültiger Token (offen)')
+    try:
+        live = cache.get('live') or {}
+        lxc = [h for h in live.get('hosts', []) if h.get('ct_id')]
+        agents = [h for h in lxc if h.get('agent')]
+        add('GL-Agents', len(agents) > 0, f'{len(agents)}/{len(lxc)} erreichbar')
+    except Exception as e:
+        add('GL-Agents', False, e)
+    return jsonify(out)
 
 @app.route('/api/mfa/setup', methods=['POST'])
 @login_required
