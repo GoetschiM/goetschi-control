@@ -215,6 +215,23 @@ button { font-family: inherit; }
   font-weight: 600; z-index: 50; box-shadow: 0 8px 30px rgba(0,0,0,.4);
 }
 
+/* ---- service board (Homarr-style) ---- */
+.board { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
+.tile {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 18px 12px; color: var(--text); text-align: center; cursor: pointer; transition: border-color .15s, transform .15s;
+}
+.tile:hover { border-color: var(--accent); transform: translateY(-2px); }
+.tile[draggable="true"] { cursor: grab; }
+.tile-ico { font-size: 30px; line-height: 1; }
+.tile-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tile-url { color: var(--text-mute); font-size: 11px; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tile-x {
+  position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--crit); color: #fff; border: 0; cursor: pointer; font-size: 11px; line-height: 1;
+}
+
 /* ---- AI analysis ---- */
 .ai-bar { margin-bottom: 12px; }
 .ai-bar .inp { min-width: 240px; }

@@ -2171,6 +2171,57 @@ def api_alerts_ack():
             _acked_alerts.pop(k, None)
     return jsonify({'ok': True})
 
+# ─── SERVICE BOARD (Homarr-style launcher) ─────
+def _board_ensure():
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('CREATE TABLE IF NOT EXISTS board (id INTEGER PRIMARY KEY CHECK (id=1), tiles_json TEXT)')
+    conn.commit(); conn.close()
+
+def _board_seed():
+    """Auto-build tiles from discovered services that have a URL."""
+    live = cache.get('live') or {}
+    tiles, seen = [], set()
+    for h in live.get('hosts', []):
+        for s in (h.get('services') or []):
+            url = s.get('url')
+            if url and url not in seen:
+                seen.add(url)
+                tiles.append({'name': s.get('name'), 'url': url,
+                              'icon': h.get('icon') or '🔗', 'cat': h.get('category') or 'service'})
+    return tiles
+
+@app.route('/api/board', methods=['GET'])
+@login_required
+def api_board_get():
+    _board_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    row = conn.execute('SELECT tiles_json FROM board WHERE id=1').fetchone()
+    conn.close()
+    if row and row[0]:
+        try:
+            return jsonify(json.loads(row[0]))
+        except Exception:
+            pass
+    return jsonify(_board_seed())
+
+@app.route('/api/board/discovered', methods=['GET'])
+@login_required
+def api_board_discovered():
+    return jsonify(_board_seed())
+
+@app.route('/api/board', methods=['PUT'])
+@login_required
+def api_board_put():
+    _board_ensure()
+    body = request.json
+    tiles = body if isinstance(body, list) else (body or {}).get('tiles', [])
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('INSERT INTO board (id,tiles_json) VALUES (1,?) '
+                 'ON CONFLICT(id) DO UPDATE SET tiles_json=excluded.tiles_json',
+                 (json.dumps(tiles),))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True, 'count': len(tiles)})
+
 @app.route('/api/processes/<host_key>')
 @login_required
 def api_processes(host_key):

@@ -10,9 +10,11 @@ import Terminal from './pages/Terminal.jsx'
 import Inventory from './pages/Inventory.jsx'
 import Analyze from './pages/Analyze.jsx'
 import Maintenance from './pages/Maintenance.jsx'
+import Board from './pages/Board.jsx'
 
 const NAV = [
   { to: '/', ico: '▦', label: 'Übersicht', end: true },
+  { to: '/board', ico: '◰', label: 'Dienste' },
   { to: '/topology', ico: '⤳', label: 'Topologie' },
   { to: '/inventory', ico: '▤', label: 'Inventar' },
   { to: '/analyze', ico: '✦', label: 'KI-Analyse' },
@@ -71,6 +73,7 @@ export default function App() {
         <div className="content">
           <Routes>
             <Route path="/" element={<Overview />} />
+            <Route path="/board" element={<Board />} />
             <Route path="/host/:key" element={<HostDetail />} />
             <Route path="/host/:key/c/:name" element={<ContainerDetail />} />
             <Route path="/host/:key/terminal" element={<Terminal />} />
@@ -89,6 +92,7 @@ export default function App() {
 
 function titleFor(path) {
   if (path.endsWith('/terminal')) return 'Terminal'
+  if (path.startsWith('/board')) return 'Dienste'
   if (path.includes('/c/')) return 'Container'
   if (path.startsWith('/host/')) return 'Service'
   if (path.startsWith('/topology')) return 'Topologie'

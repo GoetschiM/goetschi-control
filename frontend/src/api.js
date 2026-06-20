@@ -17,6 +17,9 @@ export function postJSON(path, body) {
 export function patchJSON(path, body) {
   return sendJSON('PATCH', path, body)
 }
+export function putJSON(path, body) {
+  return sendJSON('PUT', path, body)
+}
 export function delJSON(path) {
   return sendJSON('DELETE', path)
 }
