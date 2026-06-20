@@ -142,6 +142,7 @@ export default function HostDetail() {
         <div className="panel">
           <h3>Aktionen</h3>
           <div className="actions">
+            <Link className="btn" to={`/analyze?host=${encodeURIComponent(hostKey)}&q=${encodeURIComponent('Warum verhält sich dieser Host auffällig? Analysiere Last und Logs.')}`}>✦ KI-Analyse</Link>
             {host.ct_id && (
               <Link className="btn" to={`/host/${encodeURIComponent(hostKey)}/terminal`}>⌨ SSH-Terminal</Link>
             )}

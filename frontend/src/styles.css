@@ -201,6 +201,21 @@ button { font-family: inherit; }
   font-weight: 600; z-index: 50; box-shadow: 0 8px 30px rgba(0,0,0,.4);
 }
 
+/* ---- AI analysis ---- */
+.ai-bar { margin-bottom: 12px; }
+.ai-bar .inp { min-width: 240px; }
+.ai-input { display: flex; gap: 10px; align-items: stretch; }
+.ai-q { flex: 1; resize: vertical; font-size: 14px; line-height: 1.5; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; white-space: nowrap; }
+.btn.primary:hover { filter: brightness(1.08); }
+.ai-quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip {
+  background: var(--bg-elev); border: 1px solid var(--line); color: var(--text-dim);
+  padding: 7px 12px; border-radius: 999px; font-size: 12.5px; cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); color: var(--text); }
+.ai-answer .ai-text { white-space: pre-wrap; line-height: 1.65; font-size: 14px; }
+
 /* ---- bulk actions ---- */
 .bulk-bar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

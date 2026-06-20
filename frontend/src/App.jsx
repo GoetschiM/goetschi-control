@@ -8,11 +8,13 @@ import Alerts from './pages/Alerts.jsx'
 import Settings from './pages/Settings.jsx'
 import Terminal from './pages/Terminal.jsx'
 import Inventory from './pages/Inventory.jsx'
+import Analyze from './pages/Analyze.jsx'
 
 const NAV = [
   { to: '/', ico: '▦', label: 'Übersicht', end: true },
   { to: '/topology', ico: '⤳', label: 'Topologie' },
   { to: '/inventory', ico: '▤', label: 'Inventar' },
+  { to: '/analyze', ico: '✦', label: 'KI-Analyse' },
   { to: '/alerts', ico: '◬', label: 'Alarme' },
   { to: '/settings', ico: '⚙', label: 'Einstellungen' },
 ]
@@ -52,6 +54,7 @@ export default function App() {
             <Route path="/host/:key/terminal" element={<Terminal />} />
             <Route path="/topology" element={<Topology />} />
             <Route path="/inventory" element={<Inventory />} />
+            <Route path="/analyze" element={<Analyze />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
@@ -67,6 +70,7 @@ function titleFor(path) {
   if (path.startsWith('/host/')) return 'Service'
   if (path.startsWith('/topology')) return 'Topologie'
   if (path.startsWith('/inventory')) return 'Inventar'
+  if (path.startsWith('/analyze')) return 'KI-Analyse'
   if (path.startsWith('/alerts')) return 'Alarme'
   if (path.startsWith('/settings')) return 'Einstellungen'
   return 'Übersicht'

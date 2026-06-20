@@ -1995,6 +1995,80 @@ def api_container_bulk():
     ok_n = sum(1 for r in results if r.get('ok'))
     return jsonify({'ok': True, 'done': ok_n, 'total': len(results), 'results': results})
 
+# ─── AI ANALYSIS (LiteLLM) ─────────────────────
+def _llm_chat(messages, model='gemini-flash', max_tokens=2000, temperature=0.3):
+    body = json.dumps({'model': model, 'messages': messages,
+                       'max_tokens': max_tokens, 'temperature': temperature}).encode()
+    req = urllib.request.Request(f'{LITELLM_URL}/v1/chat/completions', data=body, method='POST')
+    req.add_header('Authorization', f'Bearer {LITELLM_KEY}')
+    req.add_header('Content-Type', 'application/json')
+    resp = json.loads(urllib.request.urlopen(req, timeout=90).read())
+    return (resp.get('choices', [{}])[0].get('message', {}) or {}).get('content') or ''
+
+def _build_ai_context(host_key=None):
+    live = cache.get('live') or {}
+    hosts = live.get('hosts', [])
+    out = []
+    s = live.get('summary', {})
+    out.append(f"Cluster: {s.get('online', 0)} online, {s.get('degraded', 0)} degraded, "
+               f"{s.get('offline', 0)} offline (gesamt {s.get('total', 0)}).")
+    alerts = live.get('alerts', [])
+    if alerts:
+        out.append("Aktive Alarme:")
+        for a in alerts[:15]:
+            out.append(f"  - [{a.get('severity')}] {a.get('host')}: {a.get('msg')}")
+    if host_key:
+        h = next((x for x in hosts if x['key'] == host_key), None)
+        if h:
+            m = h.get('metrics') or {}; ag = h.get('agent') or {}
+            out.append(f"\nHost {h.get('name')} (IP {h.get('ip')}, CT{h.get('ct_id')}): "
+                       f"Status {h.get('status')}, CPU {m.get('cpu')}%, RAM {m.get('ram')}%, Disk {m.get('disk_pct')}%.")
+            if ag:
+                out.append(f"  OS {ag.get('os')}, Uptime {ag.get('uptime_h')}h, Load {ag.get('load')}, Agent {ag.get('agent_version')}.")
+            down = [x.get('name') for x in (h.get('services') or []) if x.get('status') != 'online']
+            if down:
+                out.append(f"  Dienste nicht-online: {', '.join(down[:12])}")
+            try:
+                logs = get_loki_logs(f'{{host=~"{h.get("ip")}.*"}}', limit=25)
+                if logs:
+                    out.append("  Letzte Logzeilen:")
+                    for l in logs[:25]:
+                        out.append(f"    {str(l.get('msg', ''))[:160]}")
+            except Exception:
+                pass
+    else:
+        out.append("\nHosts:")
+        for h in hosts[:30]:
+            m = h.get('metrics') or {}
+            out.append(f"  - {h.get('name')} [{h.get('status')}] CPU {m.get('cpu')}% RAM {m.get('ram')}%")
+    return "\n".join(out)[:8000]
+
+@app.route('/api/ai/analyze', methods=['POST'])
+@login_required
+def api_ai_analyze():
+    d = request.json or {}
+    question = (d.get('question') or '').strip()
+    host_key = d.get('host_key') or None
+    if not question:
+        return jsonify({'ok': False, 'error': 'Frage fehlt'})
+    if not LITELLM_KEY:
+        return jsonify({'ok': False, 'error': 'LITELLM_KEY nicht gesetzt'})
+    ctx = _build_ai_context(host_key)
+    messages = [
+        {'role': 'system', 'content':
+            'Du bist der KI-Analyst der Goetschi-Control-Infrastruktur (Proxmox, LXC, Docker, '
+            'Prometheus, Loki, UniFi). Antworte auf Deutsch, knapp und konkret. Stütze dich nur '
+            'auf die gegebenen Daten; wenn etwas fehlt, sage es. Gib bei Problemen mögliche '
+            'Ursachen und konkrete nächste Schritte.'},
+        {'role': 'user', 'content': f'INFRASTRUKTUR-KONTEXT:\n{ctx}\n\nFRAGE: {question}'},
+    ]
+    _audit(request.remote_addr, 'ai_analyze', host_key or '', question[:80])
+    try:
+        answer = _llm_chat(messages) or '(keine Antwort vom Modell — evtl. Token-Limit)'
+        return jsonify({'ok': True, 'answer': answer, 'model': 'gemini-flash', 'host_key': host_key})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
+
 @app.route('/api/alerts')
 @login_required
 def api_alerts():
