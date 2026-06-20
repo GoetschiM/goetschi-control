@@ -15,6 +15,8 @@ export default function HostDetail() {
   const [ramHist, setRamHist] = useState([])
   const [logs, setLogs] = useState(null)
   const [busy, setBusy] = useState('')
+  const [sel, setSel] = useState(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -31,6 +33,22 @@ export default function HostDetail() {
     try { const r = await postJSON(path); alert(r?.ok === false ? `${label} fehlgeschlagen: ${r.error || r.msg}` : `${label}: ausgelöst`) }
     catch (e) { alert(`${label} fehlgeschlagen: ${e.message}`) }
     finally { setBusy('') }
+  }
+
+  function toggleSel(name) {
+    setSel(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n })
+  }
+  async function bulk(actionName) {
+    const targets = [...sel].map(name => ({ host: hostKey, name }))
+    if (targets.length === 0) return
+    if (!confirm(`${actionName} für ${targets.length} Container?`)) return
+    setBulkBusy(true)
+    try {
+      const r = await postJSON('/api/container/bulk', { action: actionName, targets })
+      alert(`${actionName}: ${r.done}/${r.total} erfolgreich`)
+      setSel(new Set())
+    } catch (e) { alert(`Fehler: ${e.message}`) }
+    finally { setBulkBusy(false) }
   }
 
   if (!host) return <div className="center-msg">lädt Host …</div>
@@ -76,15 +94,24 @@ export default function HostDetail() {
 
         <div className="panel">
           <h3>Docker · {containers.length}</h3>
+          {sel.size > 0 && (
+            <div className="bulk-bar">
+              <span>{sel.size} ausgewählt</span>
+              <button className="btn" disabled={bulkBusy} onClick={() => bulk('start')}>▶ Start</button>
+              <button className="btn" disabled={bulkBusy} onClick={() => bulk('stop')}>⏹ Stop</button>
+              <button className="btn" disabled={bulkBusy} onClick={() => bulk('restart')}>↻ Neustart</button>
+            </div>
+          )}
           {containers.length === 0 && <div className="muted">{agent ? 'keine' : 'lädt …'}</div>}
           {containers.map((c, i) => {
             const up = (c.status || '').toLowerCase().startsWith('up') || (c.status || '').toLowerCase().includes('running')
             return (
-              <Link className="svc-row" key={i} to={`/host/${encodeURIComponent(hostKey)}/c/${encodeURIComponent(c.name)}`}>
+              <div className="svc-row" key={i}>
+                <input type="checkbox" className="chk" checked={sel.has(c.name)} onChange={() => toggleSel(c.name)} />
                 <StatusDot status={up ? 'online' : 'offline'} />
-                <span>{c.name}</span>
+                <Link to={`/host/${encodeURIComponent(hostKey)}/c/${encodeURIComponent(c.name)}`}>{c.name}</Link>
                 <span className="port">{(c.image || '').split(':')[0].split('/').pop()}</span>
-              </Link>
+              </div>
             )
           })}
         </div>

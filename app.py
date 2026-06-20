@@ -1519,6 +1519,33 @@ def _inv_all_summary():
     return [{'host_key': r[0], 'vmid': r[1], 'os': r[2], 'version_id': r[3],
              'python': r[4], 'kernel': r[5], 'pkg_count': r[6], 'scanned_at': r[7]} for r in rows]
 
+# ─── CONTAINER ACTIONS (start/stop/restart via Proxmox) ────────
+_SAFE_CNAME = re.compile(r'^[A-Za-z0-9_.\-]+$')
+
+def _host_vmid(host_key):
+    h = STATIC_HOSTS.get(host_key)
+    if h and h[4]:
+        return h[4]
+    live = cache.get('live')
+    hobj = next((x for x in (live or {}).get('hosts', []) if x['key'] == host_key), None) if live else None
+    return hobj.get('ct_id') if hobj else None
+
+def container_action(host_key, name, action):
+    if action not in ('start', 'stop', 'restart'):
+        return {'ok': False, 'error': 'Ungültige Aktion'}
+    if not name or not _SAFE_CNAME.match(name):
+        return {'ok': False, 'error': 'Ungültiger Container-Name'}
+    vmid = _host_vmid(host_key)
+    if not vmid:
+        return {'ok': False, 'error': 'Kein LXC / keine VMID'}
+    try:
+        out = _prox_exec(vmid, f'docker {action} {name} 2>&1', timeout=45).strip()
+        ok = 'error' not in out.lower() and 'no such' not in out.lower()
+        cache.bust()
+        return {'ok': ok, 'msg': out[:300] or f'{action} ok'}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
 # ─── CHECKS ───────────────────────────────────
 
 def _tcp(host, port, timeout=3):
@@ -1946,6 +1973,27 @@ def api_restart(host_key):
         return jsonify({'ok': False, 'error': str(e)})
 
 # ─── AUDIT LOG ────────────────────────────────
+
+@app.route('/api/container/<host_key>/<action>', methods=['POST'])
+@login_required
+def api_container_action(host_key, action):
+    name = (request.json or {}).get('name', '')
+    _audit(request.remote_addr, f'container_{action}', host_key, name)
+    return jsonify(container_action(host_key, name, action))
+
+@app.route('/api/container/bulk', methods=['POST'])
+@login_required
+def api_container_bulk():
+    d = request.json or {}
+    action = d.get('action', '')
+    targets = d.get('targets', [])[:50]
+    _audit(request.remote_addr, f'bulk_{action}', '', f'{len(targets)} targets')
+    results = []
+    for t in targets:
+        r = container_action(t.get('host', ''), t.get('name', ''), action)
+        results.append({'host': t.get('host'), 'name': t.get('name'), **r})
+    ok_n = sum(1 for r in results if r.get('ok'))
+    return jsonify({'ok': True, 'done': ok_n, 'total': len(results), 'results': results})
 
 @app.route('/api/alerts')
 @login_required

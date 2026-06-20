@@ -27,12 +27,13 @@ export default function ContainerDetail() {
     finally { setDiagBusy(false) }
   }
 
-  async function restart() {
-    if (!confirm(`Container "${cname}" neustarten?`)) return
+  async function act(action) {
+    const labels = { start: 'starten', stop: 'stoppen', restart: 'neustarten' }
+    if (!confirm(`Container "${cname}" ${labels[action]}?`)) return
     setBusy(true)
     try {
-      const r = await postJSON(`/api/agent/${encodeURIComponent(hostKey)}/restart`, { name: cname })
-      alert(r.ok ? `Neugestartet: ${r.msg || cname}` : `Fehler: ${r.error || r.msg || 'unbekannt'}`)
+      const r = await postJSON(`/api/container/${encodeURIComponent(hostKey)}/${action}`, { name: cname })
+      alert(r.ok ? `${labels[action]}: ${r.msg || 'ok'}` : `Fehler: ${r.error || r.msg || 'unbekannt'}`)
     } catch (e) { alert(`Fehler: ${e.message}`) }
     finally { setBusy(false) }
   }
@@ -64,7 +65,9 @@ export default function ContainerDetail() {
         <div className="panel">
           <h3>Aktionen</h3>
           <div className="actions">
-            <button className="btn" disabled={busy} onClick={restart}>{busy ? '…' : '↻ Neustart'}</button>
+            {!isUp && <button className="btn" disabled={busy} onClick={() => act('start')}>{busy ? '…' : '▶ Start'}</button>}
+            {isUp && <button className="btn" disabled={busy} onClick={() => act('stop')}>{busy ? '…' : '⏹ Stop'}</button>}
+            <button className="btn" disabled={busy} onClick={() => act('restart')}>{busy ? '…' : '↻ Neustart'}</button>
             <button className="btn" disabled={diagBusy} onClick={runDiag}>{diagBusy ? 'analysiere …' : '🩺 Diagnose'}</button>
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
