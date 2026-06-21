@@ -18,7 +18,8 @@ Decisions (2026-06-20):
 - [x] Animated live "flow" diagram (tiered topology with animated connectors)
 - [x] Configurable service board (Homarr-style): open/add/remove/reorder tiles, auto-fill from discovered services
 - [x] Logs from systemd journal (Proxmox pct exec) — Loki/promtail pipeline is broken/empty
-- [ ] Fix the central log pipeline (promtail can't reach docker socket -> Loki empty)
+- [x] Fixed central log pipeline: promtail redeployed on all docker hosts with docker.sock -> Loki ingests container logs (33 streams)
+- [ ] Journal logs to Loki (promtail image lacks journald support; RRM reads journals directly instead)
 - [x] Remove right-hand "LXC Status" panel (gone in redesign); fix PWA service-worker caching
 
 ## Phase 1.5 — Settings & configuration (UI)
@@ -57,7 +58,7 @@ Decisions (2026-06-20):
 - [x] SSL cert expiry monitoring (per HTTPS service, colour-coded)
 - [ ] Domain registration expiry (whois) — not yet
 - [x] Native metrics page (CPU/RAM/Disk time-series charts from history) + Grafana deep-link
-- [ ] Full Grafana embedding (needs enabling allow_embedding+anonymous on Grafana — security decision + admin creds)
+- [x] Full Grafana embedding (allow_embedding + anonymous Viewer enabled on Grafana; RRM Grafana page with kiosk iframe)
 - [x] AI analysis: "chat with infrastructure" (grounded in metrics/logs/alerts via LiteLLM gemini-flash)
 - [ ] AI: scheduled incident summaries, ticket suggestions, deeper Loki/Prometheus tool-calling
 
