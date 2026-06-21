@@ -2533,8 +2533,14 @@ def api_integrations():
     except Exception as e:
         add('Prometheus', False, e)
     try:
-        r = urllib.request.urlopen(f'{LOKI_URL}/ready', timeout=4).read().decode()
-        add('Loki', 'ready' in r.lower(), 'ready (Pipeline leer — promtail-Fix offen)')
+        ready = 'ready' in urllib.request.urlopen(f'{LOKI_URL}/ready', timeout=4).read().decode().lower()
+        cnt = 0
+        try:
+            lv = json.loads(urllib.request.urlopen(f'{LOKI_URL}/loki/api/v1/label/container/values', timeout=4).read())
+            cnt = len(lv.get('data', []) or [])
+        except Exception:
+            pass
+        add('Loki', ready, f'{cnt} Container-Streams' if cnt else 'ready (noch keine Logs)')
     except Exception as e:
         add('Loki', False, e)
     try:
