@@ -13,6 +13,9 @@ import Analyze from './pages/Analyze.jsx'
 import Maintenance from './pages/Maintenance.jsx'
 import Board from './pages/Board.jsx'
 import Automate from './pages/Automate.jsx'
+import Tasks from './pages/Tasks.jsx'
+import Ansible from './pages/Ansible.jsx'
+import Audit from './pages/Audit.jsx'
 import Events from './pages/Events.jsx'
 import Metrics from './pages/Metrics.jsx'
 import Integrations from './pages/Integrations.jsx'
@@ -27,7 +30,10 @@ const NAV = [
   { to: '/inventory', ico: '▤', label: 'Inventar' },
   { to: '/analyze', ico: '✦', label: 'KI-Analyse' },
   { to: '/automate', ico: '⚡', label: 'Automationen' },
+  { to: '/tasks', ico: '◴', label: 'Aufgaben' },
+  { to: '/ansible', ico: '⌘', label: 'Befehle' },
   { to: '/events', ico: '◔', label: 'Aktivität' },
+  { to: '/audit', ico: '☰', label: 'Protokoll' },
   { to: '/maintenance', ico: '◷', label: 'Wartung' },
   { to: '/integrations', ico: '⧉', label: 'Integrationen' },
   { to: '/alerts', ico: '◬', label: 'Alarme' },
@@ -73,7 +79,7 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
-        <div className="foot">v0.3 · RRM</div>
+        <div className="foot">v0.4 · RRM</div>
       </aside>
       <div className="scrim" onClick={() => setNavOpen(false)} />
 
@@ -98,6 +104,9 @@ export default function App() {
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/analyze" element={<Analyze />} />
             <Route path="/automate" element={<Automate />} />
+            <Route path="/tasks" element={<Tasks />} />
+            <Route path="/ansible" element={<Ansible />} />
+            <Route path="/audit" element={<Audit />} />
             <Route path="/events" element={<Events />} />
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/integrations" element={<Integrations />} />
@@ -121,6 +130,9 @@ function titleFor(path) {
   if (path.startsWith('/inventory')) return 'Inventar'
   if (path.startsWith('/analyze')) return 'KI-Analyse'
   if (path.startsWith('/automate')) return 'Automationen'
+  if (path.startsWith('/tasks')) return 'Aufgaben'
+  if (path.startsWith('/ansible')) return 'Befehle'
+  if (path.startsWith('/audit')) return 'Protokoll'
   if (path.startsWith('/events')) return 'Aktivität'
   if (path.startsWith('/maintenance')) return 'Wartung'
   if (path.startsWith('/integrations')) return 'Integrationen'

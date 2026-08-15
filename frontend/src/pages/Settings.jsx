@@ -16,6 +16,7 @@ export default function Settings() {
   const [mfaSetup, setMfaSetup] = useState(null)
   const [mfaCode, setMfaCode] = useState('')
   const [pw, setPw] = useState({ old: '', new: '' })
+  const [thr, setThr] = useState(null)
   const [msg, setMsg] = useState('')
 
   async function changePw() {
@@ -35,7 +36,7 @@ export default function Settings() {
   }
 
   async function loadAll() {
-    const [l, m, s, t, a, u, meR] = await Promise.all([
+    const [l, m, s, t, a, u, meR, th] = await Promise.all([
       getJSON('/api/live').catch(() => null),
       getJSON('/api/host_meta').catch(() => ({})),
       getJSON('/api/settings').catch(() => null),
@@ -43,9 +44,17 @@ export default function Settings() {
       getJSON('/api/audit').catch(() => []),
       getJSON('/api/users').catch(() => []),
       getJSON('/api/me').catch(() => null),
+      getJSON('/api/alert-thresholds').catch(() => null),
     ])
     setLive(l); setMeta(m || {}); setSettings(s); setTokens(t || []); setAudit(a || [])
-    setUsers(Array.isArray(u) ? u : []); setMe(meR)
+    setUsers(Array.isArray(u) ? u : []); setMe(meR); setThr(th)
+  }
+
+  async function saveThresholds() {
+    try {
+      const r = await postJSON('/api/alert-thresholds', thr)
+      setThr(r.thresholds); flash('Schwellwerte gespeichert')
+    } catch (e) { flash('Fehler: ' + e.message) }
   }
 
   async function createUser() {
@@ -167,11 +176,39 @@ export default function Settings() {
         ))}
       </div>
 
+      <div className="group-title">Alarm-Schwellwerte</div>
+      <div className="panel" style={{ marginBottom: 22 }}>
+        {!thr ? <div className="muted">lädt …</div> : (
+          <>
+            <div className="actions" style={{ flexWrap: 'wrap' }}>
+              <ThrInput label="CPU warn %" v={thr.cpu_warn} on={v => setThr({ ...thr, cpu_warn: v })} />
+              <ThrInput label="RAM warn %" v={thr.ram_warn} on={v => setThr({ ...thr, ram_warn: v })} />
+              <ThrInput label="Disk crit %" v={thr.disk_crit} on={v => setThr({ ...thr, disk_crit: v })} />
+              <ThrInput label="SSL warn Tage" v={thr.ssl_warn_days} on={v => setThr({ ...thr, ssl_warn_days: v })} />
+              {me?.role === 'admin' && <button className="btn primary" onClick={saveThresholds}>Speichern</button>}
+            </div>
+            <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+              Gilt für Dashboard-Alarme und Telegram-Benachrichtigungen (Auswertung alle ~5s).
+            </p>
+          </>
+        )}
+      </div>
+
       <div className="group-title">Konfiguration</div>
       <div className="panel" style={{ marginBottom: 22 }}>
         <div className="kv"><span>Agent-Token</span><span className="mono">{mask(settings?.agent_token)}</span></div>
         <div className="kv"><span>Agent-Port</span><span className="mono">{settings?.agent_port ?? '—'}</span></div>
         <div className="kv"><span>Dashboard-URL</span><span className="mono">{settings?.dashboard_url ?? '—'}</span></div>
+        <div className="kv">
+          <span>Status-Seite (öffentlich)</span>
+          <span>
+            <span className={`pill ${settings?.public_status ? 'online' : 'offline'}`}>
+              {settings?.public_status ? 'aktiv' : 'aus'}
+            </span>
+            {settings?.public_status && <a className="btn" style={{ marginLeft: 10 }} href="/status" target="_blank" rel="noreferrer">Öffnen</a>}
+          </span>
+        </div>
+        <div className="kv"><span>Version</span><span className="mono">{settings?.version ?? '—'}</span></div>
         <div className="kv">
           <span>Telegram</span>
           <span>
@@ -210,6 +247,16 @@ function HostRow({ h, meta, onSave }) {
       <input className="inp" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notizen" />
       <button className="btn" onClick={() => onSave(h.key, { display_name: name, category: cat, notes })}>Speichern</button>
     </div>
+  )
+}
+
+function ThrInput({ label, v, on }) {
+  return (
+    <label className="muted" style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+      {label}
+      <input className="inp" type="number" min="1" max="365" value={v ?? ''}
+        onChange={e => on(e.target.value === '' ? '' : Number(e.target.value))} style={{ width: 110 }} />
+    </label>
   )
 }
 

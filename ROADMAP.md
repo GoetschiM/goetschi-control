@@ -28,7 +28,7 @@ Decisions (2026-06-20):
 - [x] Manage API tokens (create / revoke)
 - [x] Telegram test button (via /api/telegram/test)
 - [ ] Edit host tags, criticality, owner
-- [ ] Alert thresholds config
+- [x] Alert thresholds config (Settings-UI, /api/alert-thresholds, gilt auch für Telegram) — v41
 - [ ] Add / remove monitored hosts & services from the UI
 - [ ] Theme / layout preferences
 
@@ -66,6 +66,18 @@ Decisions (2026-06-20):
 - [x] Event rule engine: "when X then Y" (metric/status conditions) with cooldown, 60s evaluator
 - [x] Actions: Telegram, AI-diagnose (LiteLLM), CT reboot, container restart
 - [ ] More triggers (backup failed, SSL expiry, log pattern) + chained actions + UI for cron tasks
+
+## Go-Live Hardening (v41, 2026-07-04)
+- [x] SECRET_KEY: zufällig generiert + persistiert in /data/secret_key (vorher erratbarer Hardcode → Session-Forgery)
+- [x] Login-Brute-Force-Schutz: 5 Fehlversuche/IP → 5 min Sperre (LOGIN_MAX_FAILS / LOGIN_BLOCK_S)
+- [x] Session-Cookies: SameSite=Lax + HttpOnly; Secure via COOKIE_SECURE=1 (wenn HTTPS davor)
+- [x] Security-Header (X-Frame-Options, nosniff, Referrer-Policy)
+- [x] Socket.IO CORS: same-origin statt `*` (Ausnahmen via CORS_ORIGINS)
+- [x] `/healthz` (öffentlich, für Uptime-Monitoring)
+- [x] Öffentliche Status-Seite `/status` + `/api/public/status` (nur Name+Status, keine IPs; PUBLIC_STATUS=0 deaktiviert)
+- [x] Host-Daten korrigiert: CT100 = Mattermost/Odysseus (Dokploy-Stack weg), Coolify-Dienste aktualisiert (MT5 Trading 3007), CT120 überwacht sich jetzt selbst ('control')
+- [ ] HTTPS: Reverse-Proxy (Coolify/Traefik oder NPM) mit Zertifikat davorschalten, dann COOKIE_SECURE=1
+- [ ] Fallback-Logins (USERS dict, Default 'line13') entfernen/ändern, sobald DB-Login etabliert
 
 ## Smarter agents (cross-cutting)
 - [ ] gl-agent: versioning, auto-update, command channel, richer security/asset data

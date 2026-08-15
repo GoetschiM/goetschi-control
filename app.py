@@ -26,13 +26,54 @@ _ssl_ctx = ssl.create_default_context()
 _ssl_ctx.check_hostname = False
 _ssl_ctx.verify_mode = ssl.CERT_NONE
 
+APP_VERSION = '41'
+
 app = Flask(__name__,
     template_folder=os.path.join(os.path.dirname(__file__), 'templates'),
     static_folder=os.path.join(os.path.dirname(__file__), 'static')
 )
-app.secret_key = os.environ.get('SECRET_KEY', 'goetschi-labs-v8-secret')
+
+def _load_secret_key():
+    """SECRET_KEY env > persisted random key in /data > legacy fallback.
+    A guessable secret key lets anyone forge admin session cookies."""
+    k = os.environ.get('SECRET_KEY')
+    if k:
+        return k
+    try:
+        data_dir = os.path.dirname(os.environ.get('AUDIT_DB', '/data/audit.db')) or '.'
+        p = os.path.join(data_dir, 'secret_key')
+        if os.path.exists(p):
+            k = open(p).read().strip()
+            if k:
+                return k
+        k = _sec.token_hex(32)
+        with open(p, 'w') as f:
+            f.write(k)
+        try:
+            os.chmod(p, 0o600)
+        except Exception:
+            pass
+        return k
+    except Exception as e:
+        print(f'[secret] persist failed ({e}) — using legacy key')
+        return 'goetschi-labs-v8-secret'
+
+app.secret_key = _load_secret_key()
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('COOKIE_SECURE', '0') == '1'
+
+# Websocket CORS: same-origin by default; extra origins via CORS_ORIGINS=a,b
+_cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '').split(',') if o.strip()]
+socketio = SocketIO(app, cors_allowed_origins=_cors_origins or None, async_mode='threading')
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    resp.headers.setdefault('Referrer-Policy', 'same-origin')
+    return resp
 
 PROXMOX_HOST = os.environ.get('PROXMOX_HOST', '10.0.60.10')
 PROXMOX_API  = f"https://{PROXMOX_HOST}:8006/api2/json"
@@ -70,6 +111,9 @@ LXC_SSH_USER   = os.environ.get('LXC_SSH_USER', 'root')
 LXC_SSH_PASS   = os.environ.get('LXC_SSH_PASS', 'Louis_one_13')
 TELEGRAM_TOKEN   = os.environ.get('TELEGRAM_TOKEN', '')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
+# Öffentliche Status-Seite (/status, ohne Login; zeigt nur Namen + up/down, keine IPs).
+# Deaktivieren mit PUBLIC_STATUS=0
+PUBLIC_STATUS    = os.environ.get('PUBLIC_STATUS', '1') == '1'
 
 # Per-host SSH overrides: key → (user, pass)
 SSH_OVERRIDES = {
@@ -92,10 +136,10 @@ USERS = {
 }
 
 SCAN_PORTS = [
-    80, 81, 443, 1713, 2000, 3000, 3001, 3010, 3023, 3033, 3034,
+    80, 81, 443, 1713, 2000, 3000, 3001, 3007, 3010, 3023, 3033, 3034,
     3100, 3389, 4000, 4001, 4010, 5000, 5001, 5002, 5003, 5004,
     5006, 5038, 5060, 5432, 5678, 5984, 6080, 6333, 6334, 6379,
-    7878, 8000, 8001, 8002, 8006, 8080, 8086, 8088, 8096, 8123,
+    7878, 8000, 8001, 8002, 8006, 8065, 8080, 8086, 8088, 8096, 8123,
     8181, 8443, 8880, 8888, 8989, 9000, 9001, 9090, 9100, 9117,
     9443, 9696, 9998, 11434,
 ]
@@ -129,8 +173,10 @@ PORT_NAMES = {
     8086:  ('InfluxDB',       True),
     8088:  ('Chronograf',     True),
     8096:  ('Jellyfin',       True),
+    8065:  ('Mattermost',     True),
     8123:  ('Home Assistant', True),
     8181:  ('Dashboard',      True),
+    3007:  ('MT5 Trading',    True),
     8443:  ('HTTPS Alt',      True),
     8888:  ('Web UI',         True),
     8989:  ('Sonarr',         True),
@@ -162,15 +208,10 @@ PORT_NAMES = {
 STATIC_HOSTS = {
     'unifi':      ('UniFi Dream Machine',   '10.0.60.1',   '🌐', 'infra',   None,  [(443,   'UniFi Web UI',    True,  'Network Mgmt')]),
     'proxmox':    ('Proxmox VE',            '10.0.60.10',  '🖥️', 'infra',   None,  [(8006,  'Proxmox Web',     True,  'Hypervisor')]),
-    'dokploy':    ('Dokploy',               '10.0.60.121', '🐳', 'infra',   100,   [
-        (3000,  'Dokploy',       True,  'Docker Orchestration'),
-        (8181,  'Dashboard',     True,  'Dieses Dashboard'),
-        (9443,  'Portainer',     True,  'Docker UI'),
-        (5678,  'n8n',           True,  'Automation'),
-        (1713,  'Goetschi Web',  True,  'Website'),
-        (3023,  'MCP Dokploy',   True,  'MCP Server'),
-        (3033,  'Moto Poschung', True,  'Motorrad-Suche'),
-        (8420,  'Signal News',   True,  'Signal-Bot'),
+    # CT100: Dokploy-Stack läuft dort seit ~2026-07 nicht mehr — real: Mattermost +
+    # Odysseus-Stack (odysseus/searxng/ntfy/chromadb, alle nur auf 127.0.0.1 gebunden)
+    'dokploy':    ('Apps (CT100)',          '10.0.60.121', '📦', 'app',     100,   [
+        (8065,  'Mattermost',    True,  'Team-Chat'),
     ]),
     'paperless':  ('Paperless-NGX',         '10.0.40.30',  '📄', 'app',     103,   [(80,    'Paperless NGX',   True,  'Dokument-Mgmt')]),
     'pgvector':   ('PostgreSQL PGVector',   '10.0.60.141', '🗄️', 'infra',   105,   [(5432,  'PostgreSQL',      False, 'Vektor-DB')]),
@@ -202,11 +243,14 @@ STATIC_HOSTS = {
     ]),
     'coolify':    ('Coolify',               '10.0.60.139', '🚀', 'infra',   118,   [
         (8000,  'Coolify',       True,  'PaaS'),
-        (80,    'Traefik',       True,  'Proxy'),
+        (80,    'Coolify Proxy', True,  'Proxy (Traefik)'),
         (9443,  'Portainer',     True,  'Docker UI'),
         (5006,  'Actual Budget', True,  'Budget'),
         (5984,  'CouchDB',       True,  'Obsidian Sync'),
-        (3034,  'BesorgsDir',    True,  'WordPress'),
+        (3007,  'MT5 Trading',   True,  'Trading API'),
+    ]),
+    'control':    ('Goetschi Control',      '10.0.60.155', '🎛️', 'core',    120,   [
+        (8181,  'RRM Dashboard', True,  'Dieses Dashboard'),
     ]),
     'magos':      ('Magos',                 '10.0.60.186', '🔮', 'ai',      401,   []),
     'orion':      ('Orion',                 '10.0.60.135', '✨', 'ai',      402,   []),
@@ -241,6 +285,7 @@ STATIC_HOSTS = {
 }
 
 DEPENDENCIES = {
+    'control':    ['proxmox', 'monitoring'],
     'nova':       ['proxmox', 'monitoring', 'litellm'],
     'litellm':    [],
     'dokploy':    ['proxmox', 'unifi'],
@@ -266,12 +311,8 @@ DEPENDENCIES = {
 SERVICE_URLS = {
     'unifi':      {'UniFi Web UI': 'https://10.0.60.1:8443'},
     'proxmox':    {'Proxmox Web': 'https://10.0.60.10:8006'},
-    'dokploy':    {'Dokploy': 'http://10.0.60.121:3000', 'Dashboard': 'http://10.0.60.121:8181',
-                   'Portainer': 'https://10.0.60.121:9443',
-                   'n8n': 'http://10.0.60.121:5678', 'Goetschi Web': 'http://10.0.60.121:1713',
-                   'MCP Dokploy': 'http://10.0.60.121:3023',
-                   'Moto Poschung': 'http://10.0.60.121:3033',
-                   'Signal News': 'http://10.0.60.121:8420'},
+    'dokploy':    {'Mattermost': 'http://10.0.60.121:8065'},
+    'control':    {'RRM Dashboard': 'http://10.0.60.155:8181'},
     'mcphub':     {'MCPHub': 'http://10.0.60.170:3000', 'Google MCP': 'http://10.0.60.170:8002'},
     'influxdb':   {'InfluxDB': 'http://10.0.60.140:8086', 'Chronograf': 'http://10.0.60.140:8088'},
     'monitoring': {'Grafana': 'http://10.0.60.110:3000', 'Loki': 'http://10.0.60.110:3100', 'Prometheus': 'http://10.0.60.110:9090'},
@@ -282,9 +323,9 @@ SERVICE_URLS = {
                    'Uvicorn API': 'http://10.0.60.60:8880'},
     'hermes':     {'Hermes API': 'http://10.0.60.156:5002'},
     'mt5-bot4':   {'MT5 Python API': 'http://10.0.60.104:8080', 'noVNC Web': 'http://10.0.60.104:6080'},
-    'coolify':    {'Coolify': 'http://10.0.60.139:8000', 'Traefik': 'http://10.0.60.139:80',
+    'coolify':    {'Coolify': 'http://10.0.60.139:8000', 'Coolify Proxy': 'http://10.0.60.139:80',
                    'Portainer': 'https://10.0.60.139:9443', 'Actual Budget': 'http://10.0.60.139:5006',
-                   'CouchDB': 'http://10.0.60.139:5984', 'BesorgsDir': 'http://10.0.60.139:3034'},
+                   'CouchDB': 'http://10.0.60.139:5984', 'MT5 Trading': 'http://10.0.60.139:3007'},
     'minio':      {'MinIO API': 'http://10.0.60.106:9000', 'MinIO Web': 'http://10.0.60.106:9001'},
     'qdrant':     {'Qdrant API': 'http://10.0.60.179:6333'},
     'smarthome':  {'Home Assistant': 'http://10.0.60.111:8123'},
@@ -306,6 +347,30 @@ EXTERNAL_LINKS = [
     {'name': 'Confluence', 'url': 'https://goetschi.atlassian.net/wiki', 'icon': '📝', 'desc': 'Wiki'},
     {'name': 'Cloudflare', 'url': 'https://dash.cloudflare.com',         'icon': '☁️', 'desc': 'DNS/CDN'},
 ]
+
+# ─── LOGIN BRUTE-FORCE SCHUTZ ─────────────────
+LOGIN_MAX_FAILS = int(os.environ.get('LOGIN_MAX_FAILS', '5'))
+LOGIN_BLOCK_S   = int(os.environ.get('LOGIN_BLOCK_S', '300'))
+_login_fails = {}   # ip → [fail-timestamps innerhalb des Fensters]
+_login_fails_lk = threading.Lock()
+
+def _login_blocked(ip):
+    now = time.time()
+    with _login_fails_lk:
+        fails = [t for t in _login_fails.get(ip, []) if now - t < LOGIN_BLOCK_S]
+        if fails:
+            _login_fails[ip] = fails
+        else:
+            _login_fails.pop(ip, None)
+        return len(fails) >= LOGIN_MAX_FAILS
+
+def _login_fail_register(ip):
+    with _login_fails_lk:
+        _login_fails.setdefault(ip, []).append(time.time())
+
+def _login_fail_clear(ip):
+    with _login_fails_lk:
+        _login_fails.pop(ip, None)
 
 def login_required(f):
     @wraps(f)
@@ -368,6 +433,10 @@ def _login_finalize(u, role):
         conn.commit(); conn.close()
     except Exception:
         pass
+    try:
+        _audit(u, 'login', '', f'erfolgreich · {request.remote_addr or ""}')
+    except Exception:
+        pass
 
 class Cache:
     def __init__(self):
@@ -417,6 +486,22 @@ def _audit(user, action, host_key='', detail=''):
     except Exception:
         pass
 
+def _who():
+    """The acting user for audit: logged-in username, falling back to client IP."""
+    try:
+        return session.get('username') or (request.remote_addr or '?')
+    except Exception:
+        return '?'
+
+def _audit_user(action, host_key='', detail=''):
+    """Audit an action attributed to the current user, with client IP appended."""
+    try:
+        ip = request.remote_addr or ''
+    except Exception:
+        ip = ''
+    d = f'{detail} · {ip}' if ip else detail
+    _audit(_who(), action, host_key, d)
+
 # ─── CRON SCHEDULER ───────────────────────────
 import uuid as _uuid
 
@@ -449,6 +534,47 @@ def _get_host_meta():
         return {r[0]: {'category': r[1], 'display_name': r[2], 'notes': r[3]} for r in rows}
     except Exception:
         return {}
+
+# ─── APP-SETTINGS (key/value, u.a. Alert-Schwellwerte) ─────────────────────
+DEFAULT_THRESHOLDS = {'cpu_warn': 90, 'ram_warn': 90, 'disk_crit': 85, 'ssl_warn_days': 30}
+
+def _init_settings():
+    try:
+        conn = sqlite3.connect(AUDIT_DB)
+        conn.execute('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT)')
+        conn.commit(); conn.close()
+    except Exception as e:
+        print(f'[settings] init failed: {e}')
+
+def _setting_get(key, default=None):
+    try:
+        conn = sqlite3.connect(AUDIT_DB)
+        row = conn.execute('SELECT value FROM app_settings WHERE key=?', (key,)).fetchone()
+        conn.close()
+        return row[0] if row else default
+    except Exception:
+        return default
+
+def _setting_set(key, value):
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('INSERT INTO app_settings (key,value) VALUES (?,?) '
+                 'ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, value))
+    conn.commit(); conn.close()
+
+def _get_thresholds():
+    cached = cache.get('thresholds', ttl=30)
+    if cached is not None:
+        return cached
+    thr = dict(DEFAULT_THRESHOLDS)
+    try:
+        saved = json.loads(_setting_get('alert_thresholds') or '{}')
+        for k in thr:
+            if k in saved:
+                thr[k] = float(saved[k])
+    except Exception:
+        pass
+    cache.set('thresholds', thr)
+    return thr
 
 # ─── AGENT-REGISTRY (Self-Registration / Heartbeat / Stale-Erkennung) ──────
 AGENT_STALE_S = int(os.environ.get('AGENT_STALE_S', '150'))
@@ -707,6 +833,7 @@ def _tg_alert(key, msg, cooldown_s=3600):
     _tg_send(f'🚨 *Goetschi Labs*\n*Host:* {host_name}\n*Problem:* {msg}\n_{time.strftime("%H:%M:%S")}_')
 
 def _tg_check_alerts(hosts_data):
+    thr = _get_thresholds()
     for h in hosts_data:
         key  = h['key']
         name = h['name']
@@ -716,8 +843,8 @@ def _tg_check_alerts(hosts_data):
             _tg_alert(f'{key}:offline', f'{name} ({h["ip"]}) ist offline 🔴')
         cpu = (m.get('cpu') if m.get('cpu') is not None else ag.get('cpu_pct', 0)) or 0
         dsk = (m.get('disk_pct') if m.get('disk_pct') is not None else (ag.get('disk') or {}).get('pct', 0)) or 0
-        if cpu > 90: _tg_alert(f'{key}:cpu', f'{name}: CPU {cpu:.0f}% ⚡')
-        if dsk > 88: _tg_alert(f'{key}:disk', f'{name}: Disk {dsk}% 💾')
+        if cpu > thr['cpu_warn']: _tg_alert(f'{key}:cpu', f'{name}: CPU {cpu:.0f}% ⚡')
+        if dsk > thr['disk_crit']: _tg_alert(f'{key}:disk', f'{name}: Disk {dsk}% 💾')
         pred = h.get('disk_pred_days')
         if pred is not None and pred < 5:
             _tg_alert(f'{key}:disk_pred', f'{name}: Disk voll in ~{pred} Tagen ⚠️', cooldown_s=86400)
@@ -772,57 +899,107 @@ def _init_crons():
             last_result TEXT,
             next_run TEXT
         )''')
+        # multi-host targets + named schedule + per-host results (added later)
+        for col, ddl in [('targets_json', 'TEXT'), ('schedule', "TEXT DEFAULT 'manual'"),
+                         ('last_results', 'TEXT'), ('created_by', 'TEXT')]:
+            try:
+                conn.execute(f'ALTER TABLE crons ADD COLUMN {col} {ddl}')
+            except Exception:
+                pass
         conn.commit(); conn.close()
     except Exception as e:
         print(f'[cron] init failed: {e}')
 
-def _run_cron_job(cron_id):
+# Named schedules → minutes until next run (None = manual / never auto)
+_SCHEDULE_MIN = {'hourly': 60, 'daily': 1440, 'weekly': 10080, 'monthly': 43200}
+
+def _schedule_next(schedule):
+    """Return ISO timestamp for the next run, or None for manual schedules."""
+    s = (schedule or 'manual').strip()
+    mins = None
+    if s in _SCHEDULE_MIN:
+        mins = _SCHEDULE_MIN[s]
+    elif s.startswith('every:'):
+        try:
+            mins = max(1, int(s.split(':', 1)[1]))
+        except Exception:
+            mins = None
+    if mins is None:
+        return None
+    return time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(time.time() + mins * 60))
+
+def _all_lxc_targets():
+    """All host_keys that are LXCs (have a VMID) → runnable via pct exec."""
+    keys = [k for k, v in STATIC_HOSTS.items() if v[4]]
+    try:
+        live = cache.get('live')
+        for h in (live or {}).get('hosts', []):
+            if h.get('ct_id') and h['key'] not in keys:
+                keys.append(h['key'])
+    except Exception:
+        pass
+    return keys
+
+def _resolve_cron_targets(targets_json, host_key):
+    """Parse a task's target spec into a concrete list of host_keys."""
+    tgts = []
+    try:
+        tgts = json.loads(targets_json) if targets_json else []
+    except Exception:
+        tgts = []
+    if not tgts and host_key:
+        tgts = [host_key]              # legacy single-host crons
+    if 'all' in tgts:
+        return _all_lxc_targets()
+    return [t for t in tgts if t]
+
+def _run_cron_job(cron_id, by='scheduler'):
+    """Run a scheduled task across all its target LXCs via Proxmox pct exec."""
     conn = sqlite3.connect(AUDIT_DB)
-    row = conn.execute('SELECT * FROM crons WHERE id=?', (cron_id,)).fetchone()
+    row = conn.execute('SELECT id,name,host_key,command,targets_json,schedule FROM crons WHERE id=?',
+                       (cron_id,)).fetchone()
     conn.close()
     if not row:
         return
-    cols = ['id','name','host_key','command','interval_min','enabled','created_at','last_run','last_ok','last_result','next_run']
-    c = dict(zip(cols, row))
-
-    h = STATIC_HOSTS.get(c['host_key'])
-    ip = h[1] if h else None
-    result = ''
-    ok = False
-    try:
-        if ip:
-            ssh_user, ssh_pass = SSH_OVERRIDES.get(c['host_key'], (LXC_SSH_USER, LXC_SSH_PASS))
-            ssh = _paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(_paramiko.AutoAddPolicy())
-            ssh.connect(ip, port=22, username=ssh_user, password=ssh_pass,
-                        timeout=10, look_for_keys=False, allow_agent=False)
-            _, o, e = ssh.exec_command(c['command'], timeout=120)
-            out = o.read().decode('utf-8','replace').strip()
-            err = e.read().decode('utf-8','replace').strip()
-            ssh.close()
-            result = (out + ('\n' + err if err else ''))[:1000]
-            ok = True
-        else:
-            result = f'Error: unknown host {c["host_key"]}'
-    except Exception as ex:
-        result = str(ex)[:500]
+    cid, name, host_key, command, targets_json, schedule = row
+    targets = _resolve_cron_targets(targets_json, host_key)
+    results, all_ok = {}, True
+    if not targets:
+        results['_'] = {'ok': False, 'out': 'Keine Ziel-Hosts'}; all_ok = False
+    for hk in targets:
+        vmid = _host_vmid(hk)
+        if not vmid:
+            results[hk] = {'ok': False, 'out': 'keine VMID (kein LXC erreichbar)'}; all_ok = False
+            continue
+        try:
+            out = _prox_exec(vmid, command, timeout=600)
+            ok = 'command not found' not in out.lower()
+            results[hk] = {'ok': ok, 'out': out.strip()[-4000:]}
+            all_ok = all_ok and ok
+        except Exception as ex:
+            results[hk] = {'ok': False, 'out': str(ex)[:500]}; all_ok = False
 
     now = time.strftime('%Y-%m-%dT%H:%M:%S')
-    nxt = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(time.time() + c['interval_min'] * 60))
+    nxt = _schedule_next(schedule)        # None for manual → won't auto-recur
+    ok_n = sum(1 for r in results.values() if r['ok'])
+    summary = f'{ok_n}/{len(results)} OK'
     conn = sqlite3.connect(AUDIT_DB)
-    conn.execute('UPDATE crons SET last_run=?,last_ok=?,last_result=?,next_run=? WHERE id=?',
-                 (now, int(ok), result, nxt, cron_id))
+    conn.execute('UPDATE crons SET last_run=?,last_ok=?,last_result=?,last_results=?,next_run=? WHERE id=?',
+                 (now, int(all_ok), summary, json.dumps(results), nxt, cron_id))
     conn.commit(); conn.close()
-    _audit('scheduler', 'cron_run', c['host_key'], f"{c['name']}: {'OK' if ok else 'FAIL'}")
+    _audit(by, 'task_run', '', f'{name}: {summary}')
+    try:
+        _nc_log('', 'task_run', f'{name} ({len(targets)} Hosts)', summary, 'info' if all_ok else 'warn')
+    except Exception:
+        pass
 
 def _cron_bg():
-    import math
     while True:
         try:
             now_str = time.strftime('%Y-%m-%dT%H:%M:%S')
             conn = sqlite3.connect(AUDIT_DB)
             due = conn.execute(
-                "SELECT id FROM crons WHERE enabled=1 AND (next_run IS NULL OR next_run <= ?)",
+                "SELECT id FROM crons WHERE enabled=1 AND next_run IS NOT NULL AND next_run <= ?",
                 (now_str,)
             ).fetchall()
             conn.close()
@@ -1868,6 +2045,7 @@ def run_live_checks():
     topology['proxmox']['parent'] = 'unifi'
 
     # ── Alert generation ──────────────────────────
+    thr = _get_thresholds()
     active_alerts = []
     seen_hosts = set()
     for h in hosts_data:
@@ -1888,13 +2066,13 @@ def run_live_checks():
         mem = (m.get('ram') if m.get('ram') is not None else ag.get('mem_pct', 0)) or 0
         dsk = (ag.get('disk') or {}).get('pct', 0) or 0
 
-        if cpu > 90:
+        if cpu > thr['cpu_warn']:
             active_alerts.append({'severity': 'warn', 'key': key, 'host': name, 'ip': ip,
                                    'msg': f'CPU {cpu:.0f}%', 'ts': int(time.time())})
-        if mem > 90:
+        if mem > thr['ram_warn']:
             active_alerts.append({'severity': 'warn', 'key': key, 'host': name, 'ip': ip,
                                    'msg': f'RAM {mem:.0f}%', 'ts': int(time.time())})
-        if dsk > 85:
+        if dsk > thr['disk_crit']:
             active_alerts.append({'severity': 'critical', 'key': key, 'host': name, 'ip': ip,
                                    'msg': f'Disk {dsk}%', 'ts': int(time.time())})
 
@@ -1916,7 +2094,7 @@ def run_live_checks():
             active_alerts.append({'severity': 'predict', 'key': hkey,
                                    'host': h['name'], 'ip': h['ip'],
                                    'msg': f'Disk voll in ~{h["disk_pred_days"]}d', 'ts': now_ts})
-        if h['ssl_min_days'] is not None and h['ssl_min_days'] < 30:
+        if h['ssl_min_days'] is not None and h['ssl_min_days'] < thr['ssl_warn_days']:
             sev = 'critical' if h['ssl_min_days'] < 7 else 'warn'
             active_alerts.append({'severity': sev, 'key': hkey,
                                    'host': h['name'], 'ip': h['ip'],
@@ -1976,6 +2154,11 @@ def login_page():
         return redirect(url_for('index'))
     error = None
     if request.method == 'POST':
+        ip = request.remote_addr or '?'
+        if _login_blocked(ip):
+            _audit('?', 'login_blocked', '', f'zu viele Fehlversuche · {ip}')
+            return render_template('login.html',
+                error=f'Zu viele Fehlversuche — gesperrt für {LOGIN_BLOCK_S // 60} Minuten'), 429
         # ── MFA step 2: a pending user submits their TOTP code ──
         if session.get('mfa_pending'):
             u = session['mfa_pending']
@@ -1987,8 +2170,11 @@ def login_page():
             except Exception:
                 valid = False
             if valid:
+                _login_fail_clear(ip)
                 _login_finalize(u, (_user_get(u) or {}).get('role', 'admin'))
                 return redirect(url_for('index'))
+            _login_fail_register(ip)
+            _audit(u or '?', 'login_fail', '', f'2FA falsch · {request.remote_addr or ""}')
             return render_template('login.html', error='Falscher 2FA-Code', mfa=True)
 
         # ── step 1: username + password ──
@@ -2001,6 +2187,7 @@ def login_page():
         elif u in USERS and check_password_hash(USERS[u], p):  # safety-net fallback (always admin)
             ok, role = True, 'admin'
         if ok:
+            _login_fail_clear(ip)
             um = _user_mfa(u)
             if um and um['enabled'] and um['secret']:
                 session.clear()
@@ -2009,13 +2196,85 @@ def login_page():
                 return render_template('login.html', error=None, mfa=True)
             _login_finalize(u, role)
             return redirect(url_for('index'))
+        _login_fail_register(ip)
+        _audit(u or '?', 'login_fail', '', f'falsche Zugangsdaten · {request.remote_addr or ""}')
         error = 'Ungültige Zugangsdaten'
     return render_template('login.html', error=error)
 
 @app.route('/logout')
 def logout():
+    try:
+        if session.get('username'):
+            _audit(session.get('username'), 'logout', '', request.remote_addr or '')
+    except Exception:
+        pass
     session.clear()
     return redirect(url_for('login_page'))
+
+@app.route('/healthz')
+def healthz():
+    """Öffentlicher Health-Check für Uptime-Monitoring (kein Login nötig)."""
+    live = cache.get('live', ttl=86400) or {}
+    age = int(time.time() - live['timestamp']) if live.get('timestamp') else None
+    return jsonify({'ok': True, 'version': APP_VERSION, 'live_age_s': age})
+
+@app.route('/api/public/status')
+def api_public_status():
+    if not PUBLIC_STATUS:
+        return jsonify({'error': 'disabled'}), 404
+    live = cache.get('live', ttl=90)
+    if live is None:
+        live = run_live_checks()
+    hosts = [{'name': h.get('name', '?'), 'category': h.get('category', ''),
+              'status': h.get('status', 'unknown')} for h in live.get('hosts', [])]
+    online = sum(1 for h in hosts if h['status'] == 'online')
+    return jsonify({'updated': live.get('timestamp'), 'total': len(hosts),
+                    'online': online, 'hosts': hosts})
+
+_STATUS_HTML = '''<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Goetschi Labs — Status</title><style>
+body{margin:0;font-family:system-ui,sans-serif;background:#0d1117;color:#e6edf3}
+.wrap{max-width:720px;margin:0 auto;padding:32px 16px}
+h1{font-size:20px;display:flex;align-items:center;gap:10px}
+.banner{padding:14px 18px;border-radius:10px;margin:18px 0;font-weight:600}
+.banner.ok{background:#0f2e1d;color:#3fb950;border:1px solid #1f6f3d}
+.banner.warn{background:#3a2d0c;color:#d29922;border:1px solid #9e7c1a}
+.svc{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #21262d}
+.svc:last-child{border-bottom:none}
+.list{background:#161b22;border:1px solid #21262d;border-radius:10px}
+.pill{font-size:12px;padding:3px 10px;border-radius:99px;font-weight:600}
+.pill.online{background:#0f2e1d;color:#3fb950}.pill.offline{background:#3d1418;color:#f85149}
+.pill.unknown{background:#21262d;color:#8b949e}
+.cat{color:#8b949e;font-size:12px;margin-left:8px}
+.foot{color:#8b949e;font-size:12px;margin-top:16px}
+</style></head><body><div class="wrap">
+<h1>🎛️ Goetschi Labs — System Status</h1>
+<div id="banner" class="banner ok">Lade …</div>
+<div id="list" class="list"></div>
+<div class="foot" id="foot"></div>
+<script>
+async function load(){
+  try{
+    const d = await (await fetch('/api/public/status')).json();
+    const b = document.getElementById('banner');
+    const down = d.total - d.online;
+    if(down === 0){ b.className='banner ok'; b.textContent='✓ Alle Systeme betriebsbereit ('+d.online+'/'+d.total+')'; }
+    else { b.className='banner warn'; b.textContent='⚠ '+down+' von '+d.total+' Diensten gestört'; }
+    document.getElementById('list').innerHTML = (d.hosts||[]).map(h =>
+      '<div class="svc"><span>'+h.name+'<span class="cat">'+(h.category||'')+'</span></span>'+
+      '<span class="pill '+h.status+'">'+(h.status==='online'?'betriebsbereit':h.status==='offline'?'gestört':'unbekannt')+'</span></div>').join('');
+    document.getElementById('foot').textContent = 'Stand: '+new Date((d.updated||0)*1000).toLocaleString();
+  }catch(e){ document.getElementById('banner').textContent='Status derzeit nicht verfügbar'; }
+}
+load(); setInterval(load, 30000);
+</script></div></body></html>'''
+
+@app.route('/status')
+def status_page():
+    if not PUBLIC_STATUS:
+        return redirect(url_for('login_page'))
+    return _STATUS_HTML
 
 @app.route('/')
 @login_required
@@ -2126,7 +2385,7 @@ def api_restart(host_key):
 @admin_required
 def api_container_action(host_key, action):
     name = (request.json or {}).get('name', '')
-    _audit(request.remote_addr, f'container_{action}', host_key, name)
+    _audit_user(f'container_{action}', host_key, name)
     return jsonify(container_action(host_key, name, action))
 
 @app.route('/api/container/bulk', methods=['POST'])
@@ -2135,7 +2394,7 @@ def api_container_bulk():
     d = request.json or {}
     action = d.get('action', '')
     targets = d.get('targets', [])[:50]
-    _audit(request.remote_addr, f'bulk_{action}', '', f'{len(targets)} targets')
+    _audit_user(f'bulk_{action}', '', f'{len(targets)} targets')
     results = []
     for t in targets:
         r = container_action(t.get('host', ''), t.get('name', ''), action)
@@ -2216,7 +2475,7 @@ def api_ai_analyze():
             'Ursachen und konkrete nächste Schritte.'},
         {'role': 'user', 'content': f'INFRASTRUKTUR-KONTEXT:\n{ctx}\n\nFRAGE: {question}'},
     ]
-    _audit(request.remote_addr, 'ai_analyze', host_key or '', question[:80])
+    _audit_user('ai_analyze', host_key or '', question[:80])
     try:
         answer = _llm_chat(messages) or '(keine Antwort vom Modell — evtl. Token-Limit)'
         return jsonify({'ok': True, 'answer': answer, 'model': 'gemini-flash', 'host_key': host_key})
@@ -2226,7 +2485,7 @@ def api_ai_analyze():
 @app.route('/api/lxc/<host_key>/<action>', methods=['POST'])
 @admin_required
 def api_lxc_action(host_key, action):
-    _audit(request.remote_addr, f'lxc_{action}', host_key, '')
+    _audit_user(f'lxc_{action}', host_key, '')
     return jsonify(lxc_action(host_key, action))
 
 _acked_alerts = {}  # signature -> ts
@@ -2425,7 +2684,7 @@ def api_auto_create():
          1 if d.get('enabled', True) else 0, int(d.get('cooldown_min', 30)),
          time.strftime('%Y-%m-%dT%H:%M:%S')))
     conn.commit(); conn.close()
-    _audit(request.remote_addr, 'auto_create', '', d['name'])
+    _audit_user('auto_create', '', d['name'])
     return jsonify({'ok': True, 'id': rid})
 
 @app.route('/api/automations/<rid>', methods=['PATCH'])
@@ -2504,7 +2763,7 @@ def api_me_password():
                  'ON CONFLICT(username) DO UPDATE SET pw_hash=excluded.pw_hash',
                  (u, generate_password_hash(new), (dbu or {}).get('role', 'admin'), time.strftime('%Y-%m-%dT%H:%M:%S')))
     conn.commit(); conn.close()
-    _audit(request.remote_addr, 'password_change', u, '')
+    _audit_user('password_change', u, '')
     return jsonify({'ok': True})
 
 @app.route('/api/grafana/dashboards')
@@ -2591,7 +2850,7 @@ def api_mfa_enable():
     conn = sqlite3.connect(AUDIT_DB)
     conn.execute('UPDATE users SET mfa_enabled=1 WHERE username=?', (u,))
     conn.commit(); conn.close()
-    _audit(request.remote_addr, 'mfa_enable', u, '')
+    _audit_user('mfa_enable', u, '')
     return jsonify({'ok': True})
 
 @app.route('/api/mfa/disable', methods=['POST'])
@@ -2607,7 +2866,7 @@ def api_mfa_disable():
     conn = sqlite3.connect(AUDIT_DB)
     conn.execute('UPDATE users SET mfa_enabled=0, mfa_secret=NULL WHERE username=?', (u,))
     conn.commit(); conn.close()
-    _audit(request.remote_addr, 'mfa_disable', u, '')
+    _audit_user('mfa_disable', u, '')
     return jsonify({'ok': True})
 
 @app.route('/api/users', methods=['GET'])
@@ -2636,7 +2895,7 @@ def api_users_create():
                  'ON CONFLICT(username) DO UPDATE SET pw_hash=excluded.pw_hash, role=excluded.role',
                  (u, generate_password_hash(p), role, time.strftime('%Y-%m-%dT%H:%M:%S')))
     conn.commit(); conn.close()
-    _audit(request.remote_addr, 'user_create', u, role)
+    _audit_user('user_create', u, role)
     return jsonify({'ok': True})
 
 @app.route('/api/users/<username>', methods=['DELETE'])
@@ -2648,7 +2907,7 @@ def api_users_delete(username):
     conn = sqlite3.connect(AUDIT_DB)
     conn.execute('DELETE FROM users WHERE username=?', (username,))
     conn.commit(); conn.close()
-    _audit(request.remote_addr, 'user_delete', username, '')
+    _audit_user('user_delete', username, '')
     return jsonify({'ok': True})
 
 @app.route('/api/settings')
@@ -2668,10 +2927,37 @@ def api_settings():
         'agent_port':           AGENT_PORT,
         'hermes_agents':        hermes,
         'agent_hosts':          agent_hosts,
-        'dashboard_url':        os.environ.get('DASHBOARD_URL', 'http://10.0.60.121:8181'),
+        'dashboard_url':        os.environ.get('DASHBOARD_URL', 'http://10.0.60.155:8181'),
         'telegram_configured':  bool(TELEGRAM_TOKEN and TELEGRAM_CHAT_ID),
         'telegram_chat_id':     TELEGRAM_CHAT_ID[:6] + '…' if TELEGRAM_CHAT_ID else '',
+        'version':              APP_VERSION,
+        'public_status':        PUBLIC_STATUS,
     })
+
+@app.route('/api/alert-thresholds', methods=['GET'])
+@login_required
+def api_thresholds_get():
+    return jsonify(_get_thresholds())
+
+@app.route('/api/alert-thresholds', methods=['POST'])
+@admin_required
+def api_thresholds_set():
+    d = request.json or {}
+    thr = dict(DEFAULT_THRESHOLDS)
+    for k, (lo, hi) in {'cpu_warn': (1, 100), 'ram_warn': (1, 100),
+                        'disk_crit': (1, 100), 'ssl_warn_days': (1, 365)}.items():
+        if k in d:
+            try:
+                v = float(d[k])
+            except (TypeError, ValueError):
+                return jsonify({'ok': False, 'error': f'{k}: keine Zahl'}), 400
+            if not lo <= v <= hi:
+                return jsonify({'ok': False, 'error': f'{k}: muss zwischen {lo} und {hi} liegen'}), 400
+            thr[k] = v
+    _setting_set('alert_thresholds', json.dumps(thr))
+    cache.bust('thresholds')
+    _audit_user('thresholds_update', '', json.dumps(thr))
+    return jsonify({'ok': True, 'thresholds': thr})
 
 @app.route('/api/audit')
 @login_required
@@ -2734,7 +3020,7 @@ def api_inventory_host(host_key):
 @app.route('/api/inventory/<host_key>/scan', methods=['POST'])
 @login_required
 def api_inventory_scan(host_key):
-    _audit(request.remote_addr, 'inv_scan', host_key, '')
+    _audit_user('inv_scan', host_key, '')
     return jsonify(scan_host_inventory(host_key))
 
 @app.route('/api/inventory/scan-all', methods=['POST'])
@@ -2750,7 +3036,7 @@ def api_inventory_scan_all():
             except Exception:
                 pass
     threading.Thread(target=_bg, daemon=True).start()
-    _audit(request.remote_addr, 'inv_scan_all', '', f'{len(keys)} hosts')
+    _audit_user('inv_scan_all', '', f'{len(keys)} hosts')
     return jsonify({'ok': True, 'msg': f'Scan von {len(keys)} LXC gestartet (Hintergrund)'})
 
 @app.route('/api/nanoclaw/events')
@@ -2794,7 +3080,7 @@ def api_nc_diagnose(host_key, container_name):
     if not ip:
         return jsonify({'ok': False, 'advice': 'Host nicht gefunden'}), 404
     source = request.args.get('source', 'docker')
-    _audit(request.remote_addr, 'nc_diagnose', host_key, f'{source}:{container_name}')
+    _audit_user('nc_diagnose', host_key, f'{source}:{container_name}')
     return jsonify(nc_diagnose(ip, container_name, source=source))
 
 @app.route('/api/nanoclaw/status')
@@ -2883,7 +3169,7 @@ def api_host_meta_patch(host_key):
                         updated_at=excluded.updated_at''',
                  (host_key, d.get('category'), d.get('display_name'), d.get('notes',''), now))
     conn.commit(); conn.close()
-    _audit(request.remote_addr, 'host_meta', host_key, f"cat={d.get('category')}")
+    _audit_user('host_meta', host_key, f"cat={d.get('category')}")
     cache.bust('live')
     return jsonify({'ok': True})
 
@@ -2914,7 +3200,7 @@ def api_tokens_create():
         conn.execute('INSERT INTO agent_tokens (id,name,token,created_at) VALUES (?,?,?,?)',
                      (tid, name, token, now))
         conn.commit(); conn.close()
-        _audit(request.remote_addr, 'token_create', name, token[:12]+'…')
+        _audit_user('token_create', name, token[:12]+'…')
         return jsonify({'ok': True, 'id': tid, 'name': name, 'token': token})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 400
@@ -3214,25 +3500,58 @@ def ws_disconnect():
 @login_required
 def api_crons_list():
     conn = sqlite3.connect(AUDIT_DB)
-    rows = conn.execute('SELECT id,name,host_key,command,interval_min,enabled,created_at,last_run,last_ok,last_result,next_run FROM crons ORDER BY created_at DESC').fetchall()
+    rows = conn.execute('SELECT id,name,host_key,command,interval_min,enabled,created_at,last_run,last_ok,last_result,next_run,targets_json,schedule,last_results,created_by FROM crons ORDER BY created_at DESC').fetchall()
     conn.close()
-    cols = ['id','name','host_key','command','interval_min','enabled','created_at','last_run','last_ok','last_result','next_run']
-    return jsonify([dict(zip(cols, r)) for r in rows])
+    cols = ['id','name','host_key','command','interval_min','enabled','created_at','last_run','last_ok','last_result','next_run','targets_json','schedule','last_results','created_by']
+    out = []
+    for r in rows:
+        d = dict(zip(cols, r))
+        try:
+            d['targets'] = json.loads(d.pop('targets_json') or '[]') or ([d['host_key']] if d.get('host_key') else [])
+        except Exception:
+            d['targets'] = []
+        try:
+            d['results'] = json.loads(d.pop('last_results') or '{}')
+        except Exception:
+            d['results'] = {}
+        d['schedule'] = d.get('schedule') or 'manual'
+        out.append(d)
+    return jsonify(out)
+
+@app.route('/api/crons/targets')
+@login_required
+def api_crons_targets():
+    """Available target hosts (LXCs) for tasks."""
+    meta = _get_host_meta()
+    res = []
+    for k in _all_lxc_targets():
+        h = STATIC_HOSTS.get(k)
+        name = (meta.get(k, {}).get('display_name')) or (h[0] if h else k)
+        cat = (h[3] if h else '') or ''
+        res.append({'key': k, 'name': name, 'category': cat})
+    res.sort(key=lambda x: x['name'].lower())
+    return jsonify(res)
 
 @app.route('/api/crons', methods=['POST'])
 @login_required
 def api_crons_create():
     d = request.json or {}
-    if not d.get('command') or not d.get('host_key'):
-        return jsonify({'error': 'host_key and command required'}), 400
+    cmd = (d.get('command') or '').strip()
+    targets = d.get('targets') or ([d['host_key']] if d.get('host_key') else [])
+    if not cmd or not targets:
+        return jsonify({'error': 'command und targets erforderlich'}), 400
+    if "'" in cmd:
+        return jsonify({'error': "Einfache Anführungszeichen (') werden derzeit nicht unterstützt"}), 400
+    schedule = (d.get('schedule') or 'manual').strip()
     cid = str(_uuid.uuid4())[:8]
     now = time.strftime('%Y-%m-%dT%H:%M:%S')
     conn = sqlite3.connect(AUDIT_DB)
-    conn.execute('INSERT INTO crons (id,name,host_key,command,interval_min,enabled,created_at,next_run) VALUES (?,?,?,?,?,1,?,?)',
-                 (cid, d.get('name','unnamed'), d['host_key'], d['command'],
-                  int(d.get('interval_min', 60)), now, now))
+    conn.execute('INSERT INTO crons (id,name,host_key,command,interval_min,enabled,created_at,next_run,targets_json,schedule,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                 (cid, d.get('name', 'Aufgabe'), '', cmd, int(d.get('interval_min', 60)),
+                  1 if d.get('enabled', True) else 0, now, _schedule_next(schedule),
+                  json.dumps(targets), schedule, _who()))
     conn.commit(); conn.close()
-    _audit(session.get('username','?'), 'cron_create', d['host_key'], d.get('name',''))
+    _audit_user('task_create', '', f"{d.get('name','')} → {','.join(targets)[:80]} [{schedule}]")
     return jsonify({'id': cid, 'ok': True})
 
 @app.route('/api/crons/<cron_id>', methods=['PATCH'])
@@ -3241,10 +3560,18 @@ def api_crons_update(cron_id):
     d = request.json or {}
     conn = sqlite3.connect(AUDIT_DB)
     if 'enabled' in d:
-        conn.execute('UPDATE crons SET enabled=? WHERE id=?', (int(d['enabled']), cron_id))
-    if 'interval_min' in d:
-        conn.execute('UPDATE crons SET interval_min=? WHERE id=?', (int(d['interval_min']), cron_id))
+        conn.execute('UPDATE crons SET enabled=? WHERE id=?', (int(bool(d['enabled'])), cron_id))
+    if 'command' in d:
+        conn.execute('UPDATE crons SET command=? WHERE id=?', (d['command'], cron_id))
+    if 'name' in d:
+        conn.execute('UPDATE crons SET name=? WHERE id=?', (d['name'], cron_id))
+    if 'targets' in d:
+        conn.execute('UPDATE crons SET targets_json=? WHERE id=?', (json.dumps(d['targets'] or []), cron_id))
+    if 'schedule' in d:
+        conn.execute('UPDATE crons SET schedule=?, next_run=? WHERE id=?',
+                     (d['schedule'], _schedule_next(d['schedule']), cron_id))
     conn.commit(); conn.close()
+    _audit_user('task_update', '', cron_id)
     return jsonify({'ok': True})
 
 @app.route('/api/crons/<cron_id>', methods=['DELETE'])
@@ -3253,13 +3580,58 @@ def api_crons_delete(cron_id):
     conn = sqlite3.connect(AUDIT_DB)
     conn.execute('DELETE FROM crons WHERE id=?', (cron_id,))
     conn.commit(); conn.close()
+    _audit_user('task_delete', '', cron_id)
     return jsonify({'ok': True})
 
 @app.route('/api/crons/<cron_id>/run', methods=['POST'])
 @login_required
 def api_crons_run(cron_id):
-    threading.Thread(target=_run_cron_job, args=(cron_id,), daemon=True).start()
-    return jsonify({'ok': True, 'msg': 'Triggered'})
+    who = _who()
+    threading.Thread(target=_run_cron_job, args=(cron_id, who), daemon=True).start()
+    _audit_user('task_run_manual', '', cron_id)
+    return jsonify({'ok': True, 'msg': 'Gestartet'})
+
+@app.route('/api/exec', methods=['POST'])
+@login_required
+def api_exec():
+    """Ansible-Modus: einen Befehl SOFORT auf mehreren Hosts ausführen und die
+    gesammelten Ausgaben zurückgeben (kein gespeicherter Cron-Job)."""
+    d = request.json or {}
+    cmd = (d.get('command') or '').strip()
+    targets = d.get('targets') or []
+    if not cmd:
+        return jsonify({'error': 'command erforderlich'}), 400
+    if "'" in cmd:
+        return jsonify({'error': "Einfache Anführungszeichen (') werden derzeit nicht unterstützt"}), 400
+    tg = _resolve_cron_targets(json.dumps(targets), '')
+    if not tg:
+        return jsonify({'error': 'Keine Ziel-Hosts gewählt'}), 400
+    tg = tg[:40]  # Sicherheitslimit
+    results, lock = {}, threading.Lock()
+
+    def _worker(hk):
+        t0 = time.time()
+        vmid = _host_vmid(hk)
+        if not vmid:
+            r = {'ok': False, 'out': 'keine VMID (kein LXC erreichbar)', 'ms': 0}
+        else:
+            try:
+                out = _prox_exec(vmid, cmd, timeout=120)
+                r = {'ok': 'command not found' not in out.lower(),
+                     'out': out.strip()[-6000:], 'ms': int((time.time() - t0) * 1000)}
+            except Exception as ex:
+                r = {'ok': False, 'out': str(ex)[:500], 'ms': int((time.time() - t0) * 1000)}
+        with lock:
+            results[hk] = r
+
+    threads = [threading.Thread(target=_worker, args=(hk,), daemon=True) for hk in tg]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=130)
+    ok_n = sum(1 for r in results.values() if r.get('ok'))
+    _audit_user('exec_adhoc', ','.join(tg)[:80], f'{cmd[:60]} → {ok_n}/{len(tg)} OK')
+    return jsonify({'results': results, 'summary': f'{ok_n}/{len(results)} OK', 'command': cmd})
 
 if __name__ == '__main__':
     _init_audit()
@@ -3267,6 +3639,7 @@ if __name__ == '__main__':
     _init_host_meta()
     _init_metrics_tables()
     _init_agents()
+    _init_settings()
     threading.Thread(target=_bg, daemon=True).start()
     threading.Thread(target=_cron_bg, daemon=True).start()
     threading.Thread(target=_nanoclaw_bg, daemon=True).start()
