@@ -91,9 +91,9 @@ COOLIFY_URL    = os.environ.get('COOLIFY_URL', 'http://10.0.60.139:8000')
 COOLIFY_KEY    = os.environ.get('COOLIFY_API_KEY', '')
 UNIFI_URL      = os.environ.get('UNIFI_URL', 'https://10.0.60.1')
 UNIFI_USER     = os.environ.get('UNIFI_USER', 'hassio')
-UNIFI_PASS     = os.environ.get('UNIFI_PASS', 'Riotstar_MICHEL_13')
+UNIFI_PASS     = os.environ.get('UNIFI_PASS', '')
 UNIFI_SITE     = os.environ.get('UNIFI_SITE', 'default')
-GL_AGENT_TOKEN = os.environ.get('GL_AGENT_TOKEN', 'gl-agent-goetschi-2026')
+GL_AGENT_TOKEN = os.environ.get('GL_AGENT_TOKEN', '')
 AGENT_PORT     = int(os.environ.get('AGENT_PORT', 9998))
 
 # Per-host agent tokens — env vars: GL_TOKEN_<HOST_KEY_UPPER> (e.g. GL_TOKEN_NOVA)
@@ -108,7 +108,7 @@ def _agent_token(ip_or_key: str) -> str:
     env_name = f'GL_TOKEN_{key.upper().replace("-", "_")}'
     return os.environ.get(env_name, GL_AGENT_TOKEN)
 LXC_SSH_USER   = os.environ.get('LXC_SSH_USER', 'root')
-LXC_SSH_PASS   = os.environ.get('LXC_SSH_PASS', 'Louis_one_13')
+LXC_SSH_PASS   = os.environ.get('LXC_SSH_PASS', '')
 TELEGRAM_TOKEN   = os.environ.get('TELEGRAM_TOKEN', '')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
 # Öffentliche Status-Seite (/status, ohne Login; zeigt nur Namen + up/down, keine IPs).
@@ -124,16 +124,21 @@ AUDIT_DB       = os.environ.get('AUDIT_DB', '/app/audit.db')
 # Hermes agent API keys: env GL_HERMES_KEY_<NAME>=<token>
 HERMES_AGENTS  = {v: k.replace('GL_HERMES_KEY_', '').lower()
                   for k, v in os.environ.items() if k.startswith('GL_HERMES_KEY_')}
-# Default dev key
-if not HERMES_AGENTS:
-    HERMES_AGENTS['hermes-dev-key-2026'] = 'hermes-dev'
+# Entwicklungs-Schluessel nur auf ausdrueckliche Anforderung (GL_HERMES_DEV_KEY setzen).
+# Frueher stand hier ein fester Schluessel im Code — der galt damit auf jeder Instanz.
+_dev_key = os.environ.get('GL_HERMES_DEV_KEY', '')
+if not HERMES_AGENTS and _dev_key:
+    HERMES_AGENTS[_dev_key] = 'hermes-dev'
 CACHE_TTL     = 5
 DISCOVERY_TTL = 90
 
-USERS = {
-    'michel': generate_password_hash(os.environ.get('PASSWORD_MICHEL', 'line13')),
-    'louis':  generate_password_hash(os.environ.get('PASSWORD_LOUIS',  'line13')),
-}
+# Notfall-Logins aus der Umgebung (PASSWORD_MICHEL / PASSWORD_LOUIS in run.env).
+# Ohne gesetztes Passwort gibt es keinen Code-Fallback mehr — die Benutzer aus der
+# users-Tabelle funktionieren davon unabhaengig weiter.
+USERS = {name: generate_password_hash(pw) for name, pw in (
+    ('michel', os.environ.get('PASSWORD_MICHEL', '')),
+    ('louis',  os.environ.get('PASSWORD_LOUIS', '')),
+) if pw}
 
 SCAN_PORTS = [
     80, 81, 443, 1713, 2000, 3000, 3001, 3007, 3010, 3023, 3033, 3034,
