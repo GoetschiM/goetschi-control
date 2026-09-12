@@ -653,37 +653,6 @@ def api_agent_register():
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
-def _init_secret_proposals():
-    try:
-        conn = sqlite3.connect(AUDIT_DB)
-        conn.execute('''CREATE TABLE IF NOT EXISTS secret_proposals (
-            id TEXT PRIMARY KEY,
-            agent_id TEXT NOT NULL,
-            proposal_type TEXT,
-            payload_json TEXT,
-            status TEXT DEFAULT 'pending',
-            created_at INTEGER,
-            updated_at INTEGER
-        )''')
-        conn.commit(); conn.close()
-    except Exception as e:
-        print(f'[secret_proposals] init failed: {e}')
-
-def _is_authorized_role(role):
-    """Check if role has access to secret-proposals."""
-    return role in ('admin', 'researcher')
-
-def _secret_proposals_register(agent_id, proposal_type, payload):
-    now = int(time.time())
-    proposal_id = f"sp_{_sec.token_hex(8)}"
-    conn = sqlite3.connect(AUDIT_DB)
-    conn.execute('''INSERT INTO secret_proposals
-        (id, agent_id, proposal_type, payload_json, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        (proposal_id, agent_id, proposal_type, json.dumps(payload), 'pending', now, now))
-    conn.commit(); conn.close()
-    return proposal_id
-
 @app.route('/api/agents')
 @login_required
 def api_agents():
@@ -691,44 +660,6 @@ def api_agents():
     return jsonify({'agents': agents, 'count': len(agents),
                     'online': sum(1 for a in agents if not a['stale']),
                     'stale': sum(1 for a in agents if a['stale'])})
-
-@app.route('/api/agents/me/secret-proposals', methods=['POST'])
-def api_agents_me_secret_proposals():
-    auth_header = request.headers.get('Authorization', '')
-    payload = request.get_json(silent=True) or {}
-
-    agent_id = None
-    role = None
-
-    # Check bearer token authentication (for agents)
-    if auth_header.startswith('Bearer '):
-        token = auth_header[7:]
-        if token == GL_AGENT_TOKEN:
-            agent_id = payload.get('agent_id') or request.remote_addr
-            role = 'researcher'
-        else:
-            return jsonify({'ok': False, 'error': 'Invalid agent token'}), 401
-    # Check session authentication (for users)
-    elif session.get('authenticated'):
-        agent_id = payload.get('agent_id') or session.get('username')
-        role = session.get('role', 'admin')
-    else:
-        return jsonify({'ok': False, 'error': 'Unauthorized'}), 401
-
-    if not _is_authorized_role(role):
-        return jsonify({'ok': False, 'error': 'Insufficient permissions'}), 403
-
-    proposal_type = payload.get('type') or payload.get('proposal_type')
-    secret_payload = payload.get('payload') or payload.get('data')
-
-    if not agent_id or not proposal_type or not secret_payload:
-        return jsonify({'ok': False, 'error': 'Missing required fields: agent_id, type, payload'}), 400
-
-    try:
-        proposal_id = _secret_proposals_register(agent_id, proposal_type, secret_payload)
-        return jsonify({'ok': True, 'proposal_id': proposal_id, 'status': 'pending'}), 201
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
 
 # ─── METRICS HISTORY / SLA / PREDICTIVE ──────────────────────────────────
 
@@ -2961,7 +2892,7 @@ def api_users_create():
     role = d.get('role', 'viewer')
     if not u or not p:
         return jsonify({'ok': False, 'error': 'username + password erforderlich'}), 400
-    if role not in ('admin', 'researcher', 'viewer'):
+    if role not in ('admin', 'viewer'):
         role = 'viewer'
     _users_ensure()
     conn = sqlite3.connect(AUDIT_DB)
@@ -3713,7 +3644,6 @@ if __name__ == '__main__':
     _init_host_meta()
     _init_metrics_tables()
     _init_agents()
-    _init_secret_proposals()
     _init_settings()
     threading.Thread(target=_bg, daemon=True).start()
     threading.Thread(target=_cron_bg, daemon=True).start()
