@@ -92,7 +92,9 @@ LITELLM_URL  = os.environ.get('LITELLM_URL', '')
 LITELLM_KEY  = os.environ.get('LITELLM_KEY', '')
 COOLIFY_URL    = os.environ.get('COOLIFY_URL', '')
 COOLIFY_KEY    = os.environ.get('COOLIFY_API_KEY', '')
-UNIFI_URL      = os.environ.get('UNIFI_URL', '').rstrip('/')
+UNIFI_URL      = (os.environ.get('UNIFI_URL') or os.environ.get('UNIFI_HOST', '')).rstrip('/')
+if UNIFI_URL and '://' not in UNIFI_URL:
+    UNIFI_URL = 'https://' + UNIFI_URL
 UNIFI_USER     = os.environ.get('UNIFI_USER', '')
 UNIFI_PASS     = os.environ.get('UNIFI_PASS', '')
 UNIFI_SITE     = os.environ.get('UNIFI_SITE', 'default')
@@ -1314,7 +1316,7 @@ def _manual_hosts_ensure():
     conn.execute('CREATE TABLE IF NOT EXISTS manual_hosts (key TEXT PRIMARY KEY, name TEXT, ip TEXT, created INTEGER)')
     conn.commit(); conn.close()
 
-def sync_registry():
+def sync_registry(lxc_ips=None):
     """Baut das Host-Register aus konfigurierter Infrastruktur, Agenten und manuellen Hosts."""
     if PROXMOX_HOST and 'proxmox' not in STATIC_HOSTS:
         STATIC_HOSTS['proxmox'] = ('Proxmox VE', PROXMOX_HOST, '🖥️', 'infra', None, [(8006, 'Proxmox Web', True, 'Hypervisor')])
@@ -1332,6 +1334,7 @@ def sync_registry():
     except Exception as e:
         print(f'[registry] manual hosts: {e}')
     known = {v[1] for v in STATIC_HOSTS.values()}
+    known |= {i.get('ip') for i in (lxc_ips or {}).values() if i.get('ip')}   # Proxmox-Container nicht doppelt als Agent-Host
     for a in _agents_list():
         if a['ip'] not in known:
             STATIC_HOSTS['agent-' + a['ip'].replace('.', '-')] = (a.get('hostname') or a['ip'], a['ip'], '🖥️', 'infra', None, [])
@@ -1343,7 +1346,7 @@ def run_discovery():
         return cached
 
     lxc_ips    = discover_lxc_ips()
-    sync_registry()
+    sync_registry(lxc_ips)
     # Veraltete feste Eintraege entfernen: Container, die auf diesem Node nicht (mehr) laufen
     # oder eine andere IP haben, werden stattdessen aus Proxmox automatisch erkannt.
     if lxc_ips:
