@@ -14,8 +14,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://10.0.60.155:8181',
-      '/login': 'http://10.0.60.155:8181',
+      '/api': 'http://localhost:8181',
+      '/login': 'http://localhost:8181',
     },
   },
 })

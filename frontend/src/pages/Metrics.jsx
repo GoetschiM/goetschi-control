@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { getJSON, usePoll } from '../api.js'
 import { MetricChart } from '../ui.jsx'
 
-const GRAFANA_URL = 'http://10.0.60.110:3000'
 
 export default function Metrics() {
   const { data: live } = usePoll('/api/live', 8000)

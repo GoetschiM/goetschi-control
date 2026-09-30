@@ -15,7 +15,7 @@ Thank you for your interest in contributing to RRM! This document provides guide
 1. Clone the repository:
 ```bash
 git clone https://github.com/GoetschiM/goetschi-control.git
-cd goetschi-control
+cd rrm
 ```
 
 2. Set up Python environment:
