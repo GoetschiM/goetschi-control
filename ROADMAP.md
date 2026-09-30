@@ -1,4 +1,4 @@
-# Goetschi Control — Roadmap
+# RRM — Roadmap
 
 Decisions (2026-06-20):
 - **Source of truth:** GitHub (private repo).

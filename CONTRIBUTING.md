@@ -1,6 +1,6 @@
-# Contributing to Goetschi Control
+# Contributing to RRM
 
-Thank you for your interest in contributing to Goetschi Control! This document provides guidelines for development, testing, and submitting contributions.
+Thank you for your interest in contributing to RRM! This document provides guidelines for development, testing, and submitting contributions.
 
 ## Development Setup
 
@@ -155,4 +155,4 @@ When reporting bugs, include:
 - Review existing issues and PRs for similar discussions
 - Open a discussion if you have questions about the codebase
 
-Thank you for contributing to Goetschi Control!
+Thank you for contributing to RRM!

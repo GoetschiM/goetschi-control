@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Goetschi Labs Dashboard v7 — Auto-Discovery Edition
+"""RRM — Infrastructure monitoring and control
 Proxmox Auto-Discovery · Prometheus · Loki · Port Scan · RMM
 """
 from flask import Flask, render_template, jsonify, request, redirect, url_for, session, send_from_directory
@@ -56,7 +56,7 @@ def _load_secret_key():
         return k
     except Exception as e:
         print(f'[secret] persist failed ({e}) — using legacy key')
-        return 'goetschi-labs-v8-secret'
+        return _sec.token_hex(32)
 
 app.secret_key = _load_secret_key()
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400
@@ -152,7 +152,7 @@ MCP_TOKEN      = MCP_TOKEN or _persisted_secret('mcp_token')
 CACHE_TTL     = 5
 DISCOVERY_TTL = 90
 
-# Notfall-Logins aus der Umgebung (PASSWORD_MICHEL / PASSWORD_LOUIS in run.env).
+# Optionaler Administrator aus der Umgebung (ADMIN_USER / ADMIN_PASSWORD).
 # Ohne gesetztes Passwort gibt es keinen Code-Fallback mehr — die Benutzer aus der
 # users-Tabelle funktionieren davon unabhaengig weiter.
 USERS = {name: generate_password_hash(pw) for name, pw in (
@@ -171,7 +171,7 @@ SCAN_PORTS = [
 PORT_NAMES = {
     80:    ('HTTP',           True),
     443:   ('HTTPS',          True),
-    1713:  ('Goetschi Web',   True),
+    1713:  ('Web App',         True),
     3000:  ('Web UI',         True),
     3010:  ('Dograh UI',      True),
     3023:  ('MCP Server',     True),
@@ -725,7 +725,7 @@ def _tg_alert(key, msg, cooldown_s=3600):
     if now - last < cooldown_s: return
     _tg_sent[key] = now
     host_name = STATIC_HOSTS.get(key.split(':')[0], (key,))[0]
-    _tg_send(f'🚨 *Goetschi Labs*\n*Host:* {host_name}\n*Problem:* {msg}\n_{time.strftime("%H:%M:%S")}_')
+    _tg_send(f'🚨 *{BRAND}*\n*Host:* {host_name}\n*Problem:* {msg}\n_{time.strftime("%H:%M:%S")}_')
 
 def _tg_check_alerts(hosts_data):
     thr = _get_thresholds()
@@ -1472,7 +1472,7 @@ def get_agent_docker(ip, timeout=2):
         return None
 
 # Nur echte Infra-Agenten ausblenden. Grafana/Prometheus/Loki sind
-# nutzerseitige Dienste (Michel will den Grafana-Link!) → NICHT skippen.
+# nutzerseitige Dienste → NICHT skippen.
 _DOCKER_SKIP = {
     'node-exporter', 'promtail',
     'dokploy-postgres', 'dokploy-redis', 'dokploy-traefik',
@@ -2198,7 +2198,7 @@ def api_public_status():
 
 _STATUS_HTML = '''<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Goetschi Labs — Status</title><style>
+<title>Status</title><style>
 body{margin:0;font-family:system-ui,sans-serif;background:#0d1117;color:#e6edf3}
 .wrap{max-width:720px;margin:0 auto;padding:32px 16px}
 h1{font-size:20px;display:flex;align-items:center;gap:10px}
@@ -2214,7 +2214,7 @@ h1{font-size:20px;display:flex;align-items:center;gap:10px}
 .cat{color:#8b949e;font-size:12px;margin-left:8px}
 .foot{color:#8b949e;font-size:12px;margin-top:16px}
 </style></head><body><div class="wrap">
-<h1>🎛️ Goetschi Labs — System Status</h1>
+<h1>System Status</h1>
 <div id="banner" class="banner ok">Lade …</div>
 <div id="list" class="list"></div>
 <div class="foot" id="foot"></div>
@@ -2331,7 +2331,7 @@ def api_agent_restart(host_key):
 @app.route('/api/restart/<host_key>', methods=['POST'])
 @login_required
 def api_restart(host_key):
-    RESTARTABLE = {'moto-poschung': 'moto-test', 'dashboard': 'goetschi-dashboard'}
+    RESTARTABLE = {}   # optional: host-key -> docker-Containername
     container = RESTARTABLE.get(host_key)
     if not container:
         return jsonify({'ok': False, 'error': 'Not in allowlist'}), 403
@@ -2434,7 +2434,7 @@ def api_ai_analyze():
     ctx = _build_ai_context(host_key)
     messages = [
         {'role': 'system', 'content':
-            'Du bist der KI-Analyst der Goetschi-Control-Infrastruktur (Proxmox, LXC, Docker, '
+            'Du bist der KI-Analyst der überwachten Infrastruktur (Proxmox, LXC, Docker, '
             'Prometheus, Loki, UniFi). Antworte auf Deutsch, knapp und konkret. Stütze dich nur '
             'auf die gegebenen Daten; wenn etwas fehlt, sage es. Gib bei Problemen mögliche '
             'Ursachen und konkrete nächste Schritte.'},
@@ -2798,7 +2798,7 @@ def api_mfa_setup():
     conn = sqlite3.connect(AUDIT_DB)
     conn.execute('UPDATE users SET mfa_secret=?, mfa_enabled=0 WHERE username=?', (secret, u))
     conn.commit(); conn.close()
-    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=u, issuer_name='Goetschi Control')
+    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=u, issuer_name=BRAND)
     buf = io.BytesIO()
     qrcode.make(uri, image_factory=qrcode.image.svg.SvgImage).save(buf)
     return jsonify({'secret': secret, 'uri': uri, 'qr_svg': buf.getvalue().decode()})
@@ -2892,7 +2892,7 @@ def api_settings():
         'agent_port':           AGENT_PORT,
         'hermes_agents':        hermes,
         'agent_hosts':          agent_hosts,
-        'dashboard_url':        os.environ.get('DASHBOARD_URL', 'http://10.0.60.155:8181'),
+        'dashboard_url':        os.environ.get('DASHBOARD_URL', ''),
         'telegram_configured':  bool(TELEGRAM_TOKEN and TELEGRAM_CHAT_ID),
         'telegram_chat_id':     TELEGRAM_CHAT_ID[:6] + '…' if TELEGRAM_CHAT_ID else '',
         'version':              APP_VERSION,
@@ -3192,7 +3192,9 @@ def get_dokploy_apps():
     if cached is not None:
         return cached
 
-    docker_data = get_agent_docker('10.0.60.121')
+    if not DOKPLOY_URL:
+        return {}
+    docker_data = get_agent_docker(urllib.parse.urlparse(DOKPLOY_URL).hostname or '')
     apps = []
     if docker_data and docker_data.get('containers'):
         for c in docker_data['containers']:
@@ -3273,7 +3275,7 @@ def api_telegram_test():
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return jsonify({'ok': False, 'configured': False,
                         'error': 'TELEGRAM_TOKEN + TELEGRAM_CHAT_ID env vars nicht gesetzt'})
-    ok = _tg_send('🟢 *Goetschi Labs Dashboard*\nTest-Nachricht — alles funktioniert! ✅')
+    ok = _tg_send(f'🟢 *{BRAND}*\nTest-Nachricht — alles funktioniert! ✅')
     return jsonify({'ok': ok, 'configured': True})
 
 @app.route('/api/metrics/<host_key>/history')
@@ -3854,7 +3856,7 @@ def mcp_endpoint():
     if method == 'initialize':
         return ok({'protocolVersion': params.get('protocolVersion', '2025-03-26'),
                    'capabilities': {'tools': {}},
-                   'serverInfo': {'name': 'goetschi-control', 'version': '1.0'}})
+                   'serverInfo': {'name': 'rrm', 'version': '1.0'}})
     if method == 'ping':
         return ok({})
     if method == 'tools/list':
