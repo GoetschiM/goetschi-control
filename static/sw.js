@@ -1,4 +1,4 @@
-// Goetschi Labs Dashboard — Service Worker
+// RRM — Service Worker
 // Ermöglicht Android App-Install (PWA) + Caching
 
 const CACHE_NAME = 'gl-dashboard-v3';

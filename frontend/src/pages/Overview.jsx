@@ -41,6 +41,16 @@ export default function Overview() {
         <Stat k="Alarme" v={(data?.alerts || []).length} />
       </div>
 
+      {(data?.hosts || []).filter(h => h.key !== 'unifi' && h.key !== 'proxmox').length === 0 && (
+        <div className="panel" style={{ marginBottom: 18 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Noch keine Hosts erfasst</div>
+          <div className="muted" style={{ marginBottom: 12 }}>
+            Installiere einen Agent auf einem Host, scanne dein Netzwerk oder verbinde Proxmox. Danach wächst die Übersicht von selbst.
+          </div>
+          <Link className="btn" to="/connect">Verbinden</Link>
+        </div>
+      )}
+
       <div className="groupby">
         <span className="muted">Gruppieren:</span>
         {Object.entries(GROUPERS).map(([k, g]) => (

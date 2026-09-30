@@ -1,7 +1,7 @@
 {
-  "name": "Goetschi Labs Dashboard",
+  "name": "RRM",
   "short_name": "GL Dashboard",
-  "description": "Infrastruktur-Dashboard für Goetschi Labs",
+  "description": "Infrastructure monitoring and control",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0e1a",

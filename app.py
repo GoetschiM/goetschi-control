@@ -75,25 +75,25 @@ def _security_headers(resp):
     resp.headers.setdefault('Referrer-Policy', 'same-origin')
     return resp
 
-PROXMOX_HOST = os.environ.get('PROXMOX_HOST', '10.0.60.10')
+PROXMOX_HOST = os.environ.get('PROXMOX_HOST', '')
 PROXMOX_API  = f"https://{PROXMOX_HOST}:8006/api2/json"
-PROXMOX_NODE = os.environ.get('PROXMOX_NODE', 'pve01')
+PROXMOX_NODE = os.environ.get('PROXMOX_NODE', '')   # leer = Node des konfigurierten Hosts
 PROXMOX_USER = os.environ.get('PROXMOX_USER', 'root@pam')
 PROXMOX_PASS = os.environ.get('PROXMOX_PASS', '')
 # Alternative zum Root-Passwort: API-Token (user@realm!tokenid=secret), z.B. mit PVEAuditor-Rolle
 PROXMOX_TOKEN = os.environ.get('PROXMOX_TOKEN', '')
 MCP_TOKEN    = os.environ.get('MCP_TOKEN', '')
-PROMETHEUS   = os.environ.get('PROMETHEUS_URL', 'http://10.0.60.110:9090')
-LOKI_URL     = os.environ.get('LOKI_URL', 'http://10.0.60.110:3100')
-GRAFANA_URL  = os.environ.get('GRAFANA_URL', 'http://10.0.60.110:3000')
-DOKPLOY_URL  = os.environ.get('DOKPLOY_URL', 'http://10.0.60.121:3000')
+PROMETHEUS   = os.environ.get('PROMETHEUS_URL', '')
+LOKI_URL     = os.environ.get('LOKI_URL', '')
+GRAFANA_URL  = os.environ.get('GRAFANA_URL', '')
+DOKPLOY_URL  = os.environ.get('DOKPLOY_URL', '')
 DOKPLOY_KEY  = os.environ.get('DOKPLOY_API_KEY', '')
-LITELLM_URL  = os.environ.get('LITELLM_URL', 'http://10.0.60.152:4000')
+LITELLM_URL  = os.environ.get('LITELLM_URL', '')
 LITELLM_KEY  = os.environ.get('LITELLM_KEY', '')
-COOLIFY_URL    = os.environ.get('COOLIFY_URL', 'http://10.0.60.139:8000')
+COOLIFY_URL    = os.environ.get('COOLIFY_URL', '')
 COOLIFY_KEY    = os.environ.get('COOLIFY_API_KEY', '')
-UNIFI_URL      = os.environ.get('UNIFI_URL', 'https://10.0.60.1')
-UNIFI_USER     = os.environ.get('UNIFI_USER', 'hassio')
+UNIFI_URL      = os.environ.get('UNIFI_URL', '').rstrip('/')
+UNIFI_USER     = os.environ.get('UNIFI_USER', '')
 UNIFI_PASS     = os.environ.get('UNIFI_PASS', '')
 UNIFI_SITE     = os.environ.get('UNIFI_SITE', 'default')
 GL_AGENT_TOKEN = os.environ.get('GL_AGENT_TOKEN', '')
@@ -119,10 +119,9 @@ TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
 PUBLIC_STATUS    = os.environ.get('PUBLIC_STATUS', '1') == '1'
 
 # Per-host SSH overrides: key → (user, pass)
-SSH_OVERRIDES = {
-    'casaos': ('michel', LXC_SSH_PASS),
-}
-AUDIT_DB       = os.environ.get('AUDIT_DB', '/app/audit.db')
+SSH_OVERRIDES = {}   # optional: host-key -> (user, pass)
+AUDIT_DB       = os.environ.get('AUDIT_DB', '/data/audit.db')
+os.makedirs(os.path.dirname(AUDIT_DB) or '.', exist_ok=True)
 
 # Hermes agent API keys: env GL_HERMES_KEY_<NAME>=<token>
 HERMES_AGENTS  = {v: k.replace('GL_HERMES_KEY_', '').lower()
@@ -132,6 +131,24 @@ HERMES_AGENTS  = {v: k.replace('GL_HERMES_KEY_', '').lower()
 _dev_key = os.environ.get('GL_HERMES_DEV_KEY', '')
 if not HERMES_AGENTS and _dev_key:
     HERMES_AGENTS[_dev_key] = 'hermes-dev'
+def _persisted_secret(name):
+    """Zufaelliges Secret einmalig erzeugen und in /data ablegen (Zero-Config-Start)."""
+    p = os.path.join(os.path.dirname(AUDIT_DB) or '.', name)
+    try:
+        if os.path.exists(p):
+            v = open(p).read().strip()
+            if v:
+                return v
+        v = _sec.token_hex(24)
+        with open(p, 'w') as f:
+            f.write(v)
+        os.chmod(p, 0o600)
+        return v
+    except Exception:
+        return _sec.token_hex(24)
+
+GL_AGENT_TOKEN = GL_AGENT_TOKEN or _persisted_secret('agent_token')
+MCP_TOKEN      = MCP_TOKEN or _persisted_secret('mcp_token')
 CACHE_TTL     = 5
 DISCOVERY_TTL = 90
 
@@ -139,8 +156,7 @@ DISCOVERY_TTL = 90
 # Ohne gesetztes Passwort gibt es keinen Code-Fallback mehr — die Benutzer aus der
 # users-Tabelle funktionieren davon unabhaengig weiter.
 USERS = {name: generate_password_hash(pw) for name, pw in (
-    ('michel', os.environ.get('PASSWORD_MICHEL', '')),
-    ('louis',  os.environ.get('PASSWORD_LOUIS', '')),
+    (os.environ.get('ADMIN_USER', 'admin').strip().lower(), os.environ.get('ADMIN_PASSWORD', '')),
 ) if pw}
 
 SCAN_PORTS = [
@@ -212,152 +228,20 @@ PORT_NAMES = {
     11434: ('Ollama',         True),
 }
 
-# key: (name, ip, icon, category, ct_id, services[(port, svc_name, has_http, desc)])
-STATIC_HOSTS = {
-    'unifi':      ('UniFi Dream Machine',   '10.0.60.1',   '🌐', 'infra',   None,  [(443,   'UniFi Web UI',    True,  'Network Mgmt')]),
-    'proxmox':    ('Proxmox VE',            '10.0.60.10',  '🖥️', 'infra',   None,  [(8006,  'Proxmox Web',     True,  'Hypervisor')]),
-    # CT100: Dokploy-Stack läuft dort seit ~2026-07 nicht mehr — real: Mattermost +
-    # Odysseus-Stack (odysseus/searxng/ntfy/chromadb, alle nur auf 127.0.0.1 gebunden)
-    'dokploy':    ('Apps (CT100)',          '10.0.60.121', '📦', 'app',     100,   [
-        (8065,  'Mattermost',    True,  'Team-Chat'),
-    ]),
-    'paperless':  ('Paperless-NGX',         '10.0.40.30',  '📄', 'app',     103,   [(80,    'Paperless NGX',   True,  'Dokument-Mgmt')]),
-    'pgvector':   ('PostgreSQL PGVector',   '10.0.60.141', '🗄️', 'infra',   105,   [(5432,  'PostgreSQL',      False, 'Vektor-DB')]),
-    'mcphub':     ('MCPHub',                '10.0.60.170', '🔌', 'core',    107,   [
-        (3000,  'MCPHub',        True,  'MCP Gateway'),
-        (8002,  'Google MCP',    True,  'Gmail/Calendar'),
-    ]),
-    'influxdb':   ('InfluxDB',              '10.0.60.140', '📊', 'infra',   109,   [
-        (8086,  'InfluxDB',      True,  'Zeitreihen-DB'),
-        (8088,  'Chronograf',    True,  'Web UI'),
-    ]),
-    'monitoring': ('Monitoring Stack',      '10.0.60.110', '📈', 'infra',   110,   [
-        (3000,  'Grafana',       True,  'Dashboards'),
-        (3100,  'Loki',          True,  'Log-Aggregation'),
-        (9090,  'Prometheus',    True,  'Metriken'),
-    ]),
-    'nova':       ('NOVA',                  '10.0.60.167', '🧠', 'agent',   112,   []),
-    'litellm':    ('LiteLLM Dedicated',     '10.0.60.152', '⚡', 'ai',      116,   [(4000,  'LiteLLM',         True,  'LLM Gateway')]),
-    'voice':      ('Voice Gateway',         '10.0.60.60',  '📞', 'voice',   117,   [
-        (8000,  'Dograh API',    True,  'Voice Gateway'),
-        (3010,  'Dograh UI',     True,  'Web Interface'),
-        (8001,  'Nova Call API', True,  'Call API'),
-        (8088,  'Asterisk HTTP', True,  'Asterisk Mgmt'),
-        (8880,  'Uvicorn API',   True,  'Python API'),
-        (6379,  'Redis',         False, 'Message Broker'),
-        (5432,  'PostgreSQL',    False, 'Database'),
-        (5060,  'SIP',           False, 'VoIP Trunk'),
-        (5038,  'Asterisk AMI',  False, 'Manager Interface'),
-    ]),
-    'coolify':    ('Coolify',               '10.0.60.139', '🚀', 'infra',   118,   [
-        (8000,  'Coolify',       True,  'PaaS'),
-        (80,    'Coolify Proxy', True,  'Proxy (Traefik)'),
-        (9443,  'Portainer',     True,  'Docker UI'),
-        (5006,  'Actual Budget', True,  'Budget'),
-        (5984,  'CouchDB',       True,  'Obsidian Sync'),
-        (3007,  'MT5 Trading',   True,  'Trading API'),
-    ]),
-    'control':    ('Goetschi Control',      '10.0.60.155', '🎛️', 'core',    120,   [
-        (8181,  'RRM Dashboard', True,  'Dieses Dashboard'),
-    ]),
-    'magos':      ('Magos',                 '10.0.60.186', '🔮', 'ai',      401,   []),
-    'orion':      ('Orion',                 '10.0.60.135', '✨', 'ai',      402,   []),
-    'hermes':     ('Hermes',                '10.0.60.156', '🐍', 'agent',   108,   [
-        (5002,  'Hermes API',    True,  'Python Agent'),
-    ]),
-    'mt5-bot4':   ('MT5 Bot 04',            '10.0.60.104', '💹', 'app',     504,   [
-        (8080,  'MT5 Python API',True,  'Trading API'),
-        (6080,  'noVNC Web',     True,  'Web VNC'),
-        (3389,  'xRDP',          False, 'Remote Desktop'),
-        (5901,  'x11VNC',        False, 'VNC Server'),
-    ]),
-    'minio':      ('MinIO Storage',         '10.0.60.106', '💾', 'infra',   505,   [
-        (9000,  'MinIO API',     True,  'Object Storage'),
-        (9001,  'MinIO Web',     True,  'Web UI'),
-    ]),
-    'qdrant':     ('Qdrant Vector DB',      '10.0.60.179', '🧬', 'ai',      506,   [
-        (6333,  'Qdrant API',    True,  'Vector DB'),
-        (6334,  'Qdrant gRPC',   False, 'gRPC'),
-    ]),
-    'smarthome':  ('Smart Home',            '10.0.60.111', '🏠', 'core',    None,  [(8123,  'Home Assistant',  False, 'Smarthome')]),
-    'casaos':     ('CasaOS',               '10.0.60.201', '🏗️', 'app',     None,  [
-        (80,    'CasaOS Web',    True,  'Home Server OS'),
-        (10081, 'Nextcloud',     True,  'Cloud Storage'),
-        (32400, 'Plex',          True,  'Media Server'),
-        (7878,  'Radarr',        True,  'Film Manager'),
-        (8989,  'Sonarr',        True,  'Serien Manager'),
-        (9696,  'Prowlarr',      True,  'Indexer Manager'),
-        (8082,  'qBittorrent',   True,  'Download Client'),
-        (8191,  'FlareSolverr',  True,  'Cloudflare Bypass'),
-    ]),
-}
+# Host-Register: key -> (name, ip, icon, category, ct_id, services[(port, svc_name, has_http, desc)])
+# Startet leer und wird zur Laufzeit gefuellt: Proxmox-Erkennung, registrierte Agenten,
+# manuell hinzugefuegte Hosts (Tabelle manual_hosts) und konfigurierte Infrastruktur.
+STATIC_HOSTS = {}
+DEPENDENCIES = {}
+SERVICE_URLS = {}
 
-# Feste Eintraege mit falscher Bezeichnung (Proxmox-Name ist massgeblich)
-STALE_STATIC = {'voice'}
-
-DEPENDENCIES = {
-    'control':    ['proxmox', 'monitoring'],
-    'nova':       ['proxmox', 'monitoring', 'litellm'],
-    'litellm':    [],
-    'dokploy':    ['proxmox', 'unifi'],
-    'monitoring': ['proxmox'],
-    'voice':      ['litellm', 'dokploy'],
-    'mcphub':     ['litellm'],
-    'casaos':     ['unifi'],
-    'unifi':      [],
-    'proxmox':    ['unifi'],
-    'hermes':     ['litellm'],
-    'smarthome':  ['unifi'],
-    'coolify':    ['proxmox', 'unifi'],
-    'minio':      ['proxmox'],
-    'qdrant':     ['proxmox'],
-    'magos':      ['proxmox', 'litellm'],
-    'orion':      ['proxmox', 'litellm'],
-    'influxdb':   ['proxmox'],
-    'pgvector':   ['proxmox'],
-    'mt5-bot4':   ['proxmox'],
-    'paperless':  ['proxmox'],
-}
-
-SERVICE_URLS = {
-    'unifi':      {'UniFi Web UI': 'https://10.0.60.1:8443'},
-    'proxmox':    {'Proxmox Web': 'https://10.0.60.10:8006'},
-    'dokploy':    {'Mattermost': 'http://10.0.60.121:8065'},
-    'control':    {'RRM Dashboard': 'http://10.0.60.155:8181'},
-    'mcphub':     {'MCPHub': 'http://10.0.60.170:3000', 'Google MCP': 'http://10.0.60.170:8002'},
-    'influxdb':   {'InfluxDB': 'http://10.0.60.140:8086', 'Chronograf': 'http://10.0.60.140:8088'},
-    'monitoring': {'Grafana': 'http://10.0.60.110:3000', 'Loki': 'http://10.0.60.110:3100', 'Prometheus': 'http://10.0.60.110:9090'},
-    'nova':       {'Dashboard': 'http://10.0.60.167:8181'},
-    'voice':      {'Dograh API': 'http://10.0.60.60:8000', 'Dograh UI': 'http://10.0.60.60:3010',
-                   'Nova Call API': 'http://10.0.60.60:8001',
-                   'Asterisk HTTP': 'http://10.0.60.60:8088',
-                   'Uvicorn API': 'http://10.0.60.60:8880'},
-    'hermes':     {'Hermes API': 'http://10.0.60.156:5002'},
-    'mt5-bot4':   {'MT5 Python API': 'http://10.0.60.104:8080', 'noVNC Web': 'http://10.0.60.104:6080'},
-    'coolify':    {'Coolify': 'http://10.0.60.139:8000', 'Coolify Proxy': 'http://10.0.60.139:80',
-                   'Portainer': 'https://10.0.60.139:9443', 'Actual Budget': 'http://10.0.60.139:5006',
-                   'CouchDB': 'http://10.0.60.139:5984', 'MT5 Trading': 'http://10.0.60.139:3007'},
-    'minio':      {'MinIO API': 'http://10.0.60.106:9000', 'MinIO Web': 'http://10.0.60.106:9001'},
-    'qdrant':     {'Qdrant API': 'http://10.0.60.179:6333'},
-    'smarthome':  {'Home Assistant': 'http://10.0.60.111:8123'},
-    'casaos':     {
-        'CasaOS Web':   'http://10.0.60.201:80',
-        'Nextcloud':    'http://10.0.60.201:10081',
-        'Plex':         'http://10.0.60.201:32400/web',
-        'Radarr':       'http://10.0.60.201:7878',
-        'Sonarr':       'http://10.0.60.201:8989',
-        'Prowlarr':     'http://10.0.60.201:9696',
-        'qBittorrent':  'http://10.0.60.201:8082',
-        'FlareSolverr': 'http://10.0.60.201:8191',
-    },
-    'litellm':    {'LiteLLM': 'http://10.0.60.152:4000'},
-}
-
-EXTERNAL_LINKS = [
-    {'name': 'Jira',       'url': 'https://goetschi.atlassian.net/jira', 'icon': '🎯', 'desc': 'Issue Tracking'},
-    {'name': 'Confluence', 'url': 'https://goetschi.atlassian.net/wiki', 'icon': '📝', 'desc': 'Wiki'},
-    {'name': 'Cloudflare', 'url': 'https://dash.cloudflare.com',         'icon': '☁️', 'desc': 'DNS/CDN'},
-]
+def _load_external_links():
+    try:
+        v = json.loads(os.environ.get('EXTERNAL_LINKS', '') or '[]')
+        return [l for l in v if isinstance(l, dict) and l.get('url')]
+    except Exception:
+        return []
+EXTERNAL_LINKS = _load_external_links()
 
 # ─── LOGIN BRUTE-FORCE SCHUTZ ─────────────────
 LOGIN_MAX_FAILS = int(os.environ.get('LOGIN_MAX_FAILS', '5'))
@@ -1253,6 +1137,8 @@ _unifi_expiry  = 0
 
 def _unifi_login():
     global _unifi_cookie, _unifi_csrf, _unifi_expiry
+    if not UNIFI_URL or not UNIFI_USER:
+        return False
     try:
         data = json.dumps({'username': UNIFI_USER, 'password': UNIFI_PASS}).encode()
         req  = urllib.request.Request(f'{UNIFI_URL}/api/auth/login',
@@ -1330,6 +1216,7 @@ def get_unifi_data():
     return result
 
 def _px_login():
+    if not PROXMOX_HOST: return None
     global _px_ticket, _px_expiry
     now = time.time()
     if _px_ticket and _px_expiry > now + 60:
@@ -1350,7 +1237,24 @@ def _px_login():
             return None
         return _px_ticket
 
+def _ensure_node():
+    """Node-Namen automatisch bestimmen, wenn PROXMOX_NODE nicht gesetzt ist."""
+    global PROXMOX_NODE
+    if PROXMOX_NODE or not PROXMOX_HOST:
+        return
+    st = _px('/cluster/status')
+    nodes = [n for n in (st or {}).get('data', []) if n.get('type') == 'node']
+    local = [n for n in nodes if n.get('local')] or nodes
+    if not local:
+        nd = _px('/nodes')
+        local = (nd or {}).get('data', [])
+    if local:
+        PROXMOX_NODE = local[0].get('name') or local[0].get('node') or ''
+
 def _px(path):
+    if not PROXMOX_HOST: return None
+    if not PROXMOX_NODE and not path in ('/cluster/status', '/nodes'):
+        _ensure_node()
     t = None if PROXMOX_TOKEN else _px_login()
     if not t and not PROXMOX_TOKEN: return None
     try:
@@ -1405,12 +1309,41 @@ def scan_ports_fast(ip, timeout=0.35):
     with ThreadPoolExecutor(max_workers=24) as pool:
         return [p for p in pool.map(probe, SCAN_PORTS) if p]
 
+def _manual_hosts_ensure():
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('CREATE TABLE IF NOT EXISTS manual_hosts (key TEXT PRIMARY KEY, name TEXT, ip TEXT, created INTEGER)')
+    conn.commit(); conn.close()
+
+def sync_registry():
+    """Baut das Host-Register aus konfigurierter Infrastruktur, Agenten und manuellen Hosts."""
+    if PROXMOX_HOST and 'proxmox' not in STATIC_HOSTS:
+        STATIC_HOSTS['proxmox'] = ('Proxmox VE', PROXMOX_HOST, '🖥️', 'infra', None, [(8006, 'Proxmox Web', True, 'Hypervisor')])
+    if UNIFI_URL and 'unifi' not in STATIC_HOSTS:
+        uh = urllib.parse.urlparse(UNIFI_URL).hostname
+        if uh:
+            STATIC_HOSTS['unifi'] = ('UniFi', uh, '🌐', 'infra', None, [(443, 'UniFi Web UI', True, 'Netzwerk')])
+    try:
+        _manual_hosts_ensure()
+        conn = sqlite3.connect(AUDIT_DB)
+        rows = conn.execute('SELECT key,name,ip FROM manual_hosts').fetchall()
+        conn.close()
+        for k, n, ip in rows:
+            STATIC_HOSTS.setdefault(k, (n, ip, '🖥️', 'app', None, []))
+    except Exception as e:
+        print(f'[registry] manual hosts: {e}')
+    known = {v[1] for v in STATIC_HOSTS.values()}
+    for a in _agents_list():
+        if a['ip'] not in known:
+            STATIC_HOSTS['agent-' + a['ip'].replace('.', '-')] = (a.get('hostname') or a['ip'], a['ip'], '🖥️', 'infra', None, [])
+            known.add(a['ip'])
+
 def run_discovery():
     cached = cache.get('discovery', ttl=DISCOVERY_TTL)
     if cached is not None:
         return cached
 
     lxc_ips    = discover_lxc_ips()
+    sync_registry()
     # Veraltete feste Eintraege entfernen: Container, die auf diesem Node nicht (mehr) laufen
     # oder eine andere IP haben, werden stattdessen aus Proxmox automatisch erkannt.
     if lxc_ips:
@@ -1418,7 +1351,7 @@ def run_discovery():
             if v[4] is None:
                 continue
             info = lxc_ips.get(str(v[4]))
-            if k in STALE_STATIC or not info or info['status'] != 'running' or (info.get('ip') and info['ip'] != v[1]):
+            if not info or info['status'] != 'running' or (info.get('ip') and info['ip'] != v[1]):
                 STATIC_HOSTS.pop(k, None)
     static_ips = {v[1] for v in STATIC_HOSTS.values()}
     ct_id_map  = {v[4]: k for k, v in STATIC_HOSTS.items() if v[4]}
@@ -1445,6 +1378,7 @@ def run_discovery():
             nm, has_http = PORT_NAMES.get(port, (f':{port}', True))
             svcs.append((port, nm, has_http, 'auto-discovered'))
 
+        STATIC_HOSTS[f'auto-ct{vmid}'] = (info['name'] or f'CT{vmid}', ip, '🔍', 'infra', ct, svcs)
         new_hosts.append({
             'key':      f'auto-ct{vmid}',
             'name':     info['name'] or f'CT{vmid}',
@@ -1464,6 +1398,7 @@ def run_discovery():
 # ─── PROMETHEUS ───────────────────────────────
 
 def get_prometheus():
+    if not PROMETHEUS: return {}
     cached = cache.get('prom', ttl=10)
     if cached is not None:
         return cached
@@ -1932,10 +1867,10 @@ def run_live_checks():
     with ThreadPoolExecutor(max_workers=48) as pool:
         futures = {}
         # Hosts with GL agent installed (LXCs + CasaOS)
-        AGENT_HOSTS = {'casaos', 'smarthome'}
+        agent_ips = {a['ip'] for a in _agents_list()}
         for key, (name, ip, icon, cat, ct_id, services) in effective.items():
             futures[pool.submit(_ping, ip)] = f'ping:{key}'
-            if ct_id or key in AGENT_HOSTS:
+            if ct_id or ip in agent_ips:
                 futures[pool.submit(get_agent_data, ip)] = f'agent:{key}'
                 futures[pool.submit(get_agent_docker, ip)] = f'docker:{key}'
             for port, svc_name, has_http, desc in services:
@@ -1962,7 +1897,7 @@ def run_live_checks():
 
         svcs = []; svc_ok = 0; svc_total = 0
         url_map  = SERVICE_URLS.get(key, {})
-        has_agent = bool(ct_id or key in AGENT_HOSTS)
+        has_agent = bool(ct_id or ip in agent_ips)
         docker_raw = results.get(f'docker:{key}')
 
         if has_agent and docker_raw and docker_raw.get('containers'):
@@ -2059,11 +1994,18 @@ def run_live_checks():
             'ip':      h['ip'],
             'status':  h['status'],
             'ct_id':   h['ct_id'],
-            'parent':  'proxmox' if h['key'] not in ('unifi', '_internet') else 'unifi',
+            'parent':  None,
         }
     topology['_internet'] = {'label': '🌍 Internet', 'ip': None, 'status': 'online', 'parent': None}
-    topology['unifi']['parent']   = '_internet'
-    topology['proxmox']['parent'] = 'unifi'
+    root = 'unifi' if 'unifi' in topology else '_internet'
+    if 'unifi' in topology:
+        topology['unifi']['parent'] = '_internet'
+    if 'proxmox' in topology:
+        topology['proxmox']['parent'] = root
+    for k, t in topology.items():
+        if k in ('_internet', 'unifi', 'proxmox'):
+            continue
+        t['parent'] = 'proxmox' if ('proxmox' in topology and t.get('ct_id')) else root
 
     # ── Alert generation ──────────────────────────
     thr = _get_thresholds()
@@ -2173,6 +2115,8 @@ def _bg():
 def login_page():
     if session.get('authenticated'):
         return redirect(url_for('index'))
+    if _user_count() == 0:
+        return redirect(url_for('setup_page'))
     error = None
     if request.method == 'POST':
         ip = request.remote_addr or '?'
@@ -2305,7 +2249,7 @@ def index():
     spa = os.path.join(app.static_folder, 'spa', 'index.html')
     if os.path.exists(spa):
         return send_from_directory(os.path.join(app.static_folder, 'spa'), 'index.html')
-    return render_template('index.html', username=session.get('username'))
+    return 'Frontend nicht gebaut: im Ordner frontend/ "npm install && npm run build" ausfuehren.', 503
 
 @app.route('/api/live')
 @login_required
@@ -2765,7 +2709,7 @@ def api_processes(host_key):
 def api_me():
     um = _user_mfa(session.get('username')) or {}
     return jsonify({'username': session.get('username'), 'role': session.get('role', 'admin'),
-                    'mfa': um.get('enabled', False)})
+                    'mfa': um.get('enabled', False), 'brand': BRAND})
 
 @app.route('/api/me/password', methods=['POST'])
 @login_required
@@ -2941,7 +2885,7 @@ def api_settings():
     agent_hosts = [
         {'key': k, 'name': h[0], 'ip': h[1], 'ct_id': h[4]}
         for k, h in STATIC_HOSTS.items()
-        if h[4] or k in {'casaos', 'smarthome'}
+        if h[4] or k.startswith('agent-')
     ]
     return jsonify({
         'agent_token':          GL_AGENT_TOKEN,
@@ -3653,6 +3597,193 @@ def api_exec():
     ok_n = sum(1 for r in results.values() if r.get('ok'))
     _audit_user('exec_adhoc', ','.join(tg)[:80], f'{cmd[:60]} → {ok_n}/{len(tg)} OK')
     return jsonify({'results': results, 'summary': f'{ok_n}/{len(results)} OK', 'command': cmd})
+
+# ─── ERSTEINRICHTUNG, HOSTS, NETZWERK-SCAN, AGENT-INSTALLER ──────────────
+BRAND = os.environ.get('BRAND_NAME', 'RRM')
+
+@app.context_processor
+def _inject_brand():
+    return {'brand': BRAND}
+
+def _user_count():
+    _users_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    n = conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]
+    conn.close()
+    return n
+
+@app.route('/setup', methods=['GET', 'POST'])
+def setup_page():
+    # Nur solange noch kein Benutzer existiert.
+    if _user_count() > 0:
+        return redirect(url_for('login_page'))
+    error = None
+    if request.method == 'POST':
+        u  = request.form.get('username', '').strip().lower()
+        p  = request.form.get('password', '')
+        p2 = request.form.get('password2', '')
+        if not re.fullmatch(r'[a-z0-9._-]{2,32}', u):
+            error = 'Benutzername: 2–32 Zeichen (a–z, 0–9, . _ -)'
+        elif len(p) < 10:
+            error = 'Passwort muss mindestens 10 Zeichen haben'
+        elif p != p2:
+            error = 'Passwörter stimmen nicht überein'
+        else:
+            conn = sqlite3.connect(AUDIT_DB)
+            conn.execute('INSERT INTO users (username,pw_hash,role,created_at) VALUES (?,?,?,?)',
+                         (u, generate_password_hash(p), 'admin', time.strftime('%Y-%m-%dT%H:%M:%S')))
+            conn.commit(); conn.close()
+            _audit(u, 'setup', '', 'Administrator bei Ersteinrichtung angelegt')
+            return redirect(url_for('login_page'))
+    return render_template('setup.html', error=error)
+
+def _hub_url():
+    base = os.environ.get('DASHBOARD_URL', '').rstrip('/')
+    return base or request.host_url.rstrip('/')
+
+@app.route('/agent/gl-agent.py')
+def agent_download():
+    # Der Agent enthaelt keine Geheimnisse; das Token wird bei der Installation gesetzt.
+    return send_from_directory(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'agent'),
+                               'gl-agent.py', mimetype='text/x-python')
+
+_INSTALL_SH = r'''#!/bin/sh
+# Installiert den RRM-Agent (nur Python 3, keine Pakete). Aufruf:
+#   curl -fsSL __HUB__/agent/install.sh | GL_TOKEN=<agent-token> sh
+set -e
+[ "$(id -u)" = 0 ] || { echo "Bitte als root ausfuehren"; exit 1; }
+[ -n "$GL_TOKEN" ] || { echo "GL_TOKEN fehlt"; exit 1; }
+command -v python3 >/dev/null || { echo "python3 nicht gefunden"; exit 1; }
+curl -fsSL "__HUB__/agent/gl-agent.py" -o /opt/gl-agent.py
+chmod 755 /opt/gl-agent.py
+umask 077
+cat > /etc/gl-agent.env <<ENV
+GL_AGENT_TOKEN=$GL_TOKEN
+GL_HUB_URL=__HUB__
+GL_REGISTER=1
+GL_REGISTER_INTERVAL=60
+ENV
+cat > /etc/systemd/system/gl-agent.service <<'UNIT'
+[Unit]
+Description=RRM Agent
+After=network-online.target
+Wants=network-online.target
+[Service]
+ExecStart=/usr/bin/python3 /opt/gl-agent.py
+EnvironmentFile=/etc/gl-agent.env
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now gl-agent
+echo "RRM-Agent laeuft. Der Host erscheint im Dashboard innerhalb einer Minute."
+'''
+
+@app.route('/agent/install.sh')
+def agent_install_script():
+    return app.response_class(_INSTALL_SH.replace('__HUB__', _hub_url()), mimetype='text/x-shellscript')
+
+@app.route('/api/connect')
+@login_required
+def api_connect():
+    hub = _hub_url()
+    return jsonify({
+        'hub_url':    hub,
+        'agent_token': GL_AGENT_TOKEN,
+        'mcp_token':  MCP_TOKEN,
+        'mcp_url':    f'{hub}/mcp',
+        'install_cmd': f'curl -fsSL {hub}/agent/install.sh | GL_TOKEN={GL_AGENT_TOKEN} sh',
+        'mcp_cmd':    f'claude mcp add --transport http rrm {hub}/mcp --header "Authorization: Bearer {MCP_TOKEN}"',
+        'integrations': {
+            'proxmox': bool(PROXMOX_HOST and (PROXMOX_TOKEN or PROXMOX_PASS)),
+            'unifi':   bool(UNIFI_URL and UNIFI_USER),
+            'prometheus': bool(PROMETHEUS), 'loki': bool(LOKI_URL), 'grafana': bool(GRAFANA_URL),
+            'dokploy': bool(DOKPLOY_URL and DOKPLOY_KEY), 'coolify': bool(COOLIFY_URL and COOLIFY_KEY),
+            'litellm': bool(LITELLM_URL and LITELLM_KEY), 'telegram': bool(TELEGRAM_TOKEN),
+        },
+    })
+
+def _host_key(ip):
+    return 'host-' + ip.replace('.', '-')
+
+@app.route('/api/hosts', methods=['POST'])
+@admin_required
+def api_hosts_add():
+    import ipaddress
+    d = request.get_json(silent=True) or {}
+    name = (d.get('name') or '').strip()[:60]
+    ip = (d.get('ip') or '').strip()
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return jsonify({'ok': False, 'error': 'Ungültige IP-Adresse'}), 400
+    if any(v[1] == ip for v in STATIC_HOSTS.values()):
+        return jsonify({'ok': False, 'error': 'Host ist bereits bekannt'}), 409
+    key = _host_key(ip)
+    _manual_hosts_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('INSERT OR REPLACE INTO manual_hosts (key,name,ip,created) VALUES (?,?,?,?)',
+                 (key, name or ip, ip, int(time.time())))
+    conn.commit(); conn.close()
+    STATIC_HOSTS[key] = (name or ip, ip, '🖥️', 'app', None, [])
+    cache.bust('live')
+    _audit_user('host_add', key, f'{name or ip} ({ip})')
+    return jsonify({'ok': True, 'key': key})
+
+@app.route('/api/hosts/<key>', methods=['DELETE'])
+@admin_required
+def api_hosts_delete(key):
+    _manual_hosts_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    n = conn.execute('DELETE FROM manual_hosts WHERE key=?', (key,)).rowcount
+    conn.commit(); conn.close()
+    if not n:
+        return jsonify({'ok': False, 'error': 'Nur manuell hinzugefügte Hosts können entfernt werden'}), 400
+    STATIC_HOSTS.pop(key, None)
+    cache.bust('live')
+    _audit_user('host_remove', key, '')
+    return jsonify({'ok': True})
+
+def _default_cidr():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('192.0.2.1', 9))
+        ip = s.getsockname()[0]; s.close()
+        return '.'.join(ip.split('.')[:3]) + '.0/24'
+    except Exception:
+        return '192.168.0.0/24'
+
+@app.route('/api/scan', methods=['GET', 'POST'])
+@admin_required
+def api_scan():
+    """Ping-Sweep eines privaten Netzes; liefert erreichbare Hosts mit Namen und offenen Ports."""
+    import ipaddress
+    if request.method == 'GET':
+        return jsonify({'default_cidr': _default_cidr()})
+    cidr = ((request.get_json(silent=True) or {}).get('cidr') or _default_cidr()).strip()
+    try:
+        net = ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        return jsonify({'ok': False, 'error': 'Ungültiges Netz (Beispiel: 192.168.1.0/24)'}), 400
+    if not net.is_private or net.num_addresses > 1024:
+        return jsonify({'ok': False, 'error': 'Nur private Netze bis /22 erlaubt'}), 400
+    ips = [str(i) for i in net.hosts()]
+    known = {v[1] for v in STATIC_HOSTS.values()}
+    def probe(ip):
+        r = _ping(ip)
+        if not (r and r[1]):
+            return None
+        try:
+            name = socket.gethostbyaddr(ip)[0]
+        except Exception:
+            name = ''
+        return {'ip': ip, 'name': name, 'rtt': r[0], 'known': ip in known, 'ports': scan_ports_fast(ip, 0.25)}
+    with ThreadPoolExecutor(max_workers=64) as pool:
+        found = [x for x in pool.map(probe, ips) if x]
+    _audit_user('network_scan', '', f'{cidr}: {len(found)} Hosts')
+    return jsonify({'ok': True, 'cidr': str(net), 'hosts': found})
 
 # ─── MCP (Model Context Protocol, Streamable HTTP, stateless) ─────────────
 # Read-only Statusabfrage fuer Agenten. Auth: Authorization: Bearer <MCP_TOKEN>.

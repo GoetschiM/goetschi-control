@@ -19,9 +19,11 @@ import Audit from './pages/Audit.jsx'
 import Events from './pages/Events.jsx'
 import Metrics from './pages/Metrics.jsx'
 import Integrations from './pages/Integrations.jsx'
+import Connect from './pages/Connect.jsx'
 
 const NAV = [
   { to: '/', ico: '▦', label: 'Übersicht', end: true },
+  { to: '/connect', ico: '⊕', label: 'Verbinden' },
   { to: '/board', ico: '◰', label: 'Dienste' },
   { to: '/topology', ico: '⤳', label: 'Topologie' },
   { to: '/metrics', ico: '◍', label: 'Metriken' },
@@ -66,7 +68,7 @@ export default function App() {
     <div className={`app ${navOpen ? 'nav-open' : ''} ${collapsed ? 'collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
-          <span className="dot" /> <span className="brand-label">Goetschi Control</span>
+          <span className="dot" /> <span className="brand-label">{me?.brand || 'RRM'}</span>
           <button className="collapse-btn" onClick={toggleCollapsed} title="Menü ein-/ausklappen">‹</button>
         </div>
         <nav className="nav" onClick={() => setNavOpen(false)}>
@@ -106,6 +108,7 @@ export default function App() {
             <Route path="/audit" element={<Audit />} />
             <Route path="/events" element={<Events />} />
             <Route path="/maintenance" element={<Maintenance />} />
+            <Route path="/connect" element={<Connect />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/settings" element={<Settings />} />
@@ -118,6 +121,7 @@ export default function App() {
 
 function titleFor(path) {
   if (path.endsWith('/terminal')) return 'Terminal'
+  if (path.startsWith('/connect')) return 'Verbinden'
   if (path.startsWith('/board')) return 'Dienste'
   if (path.includes('/c/')) return 'Container'
   if (path.startsWith('/host/')) return 'Service'

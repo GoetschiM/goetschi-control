@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ brand }} &mdash; Login</title>
+    <title>{{ brand }} &mdash; Einrichtung</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="login-bg">
@@ -30,39 +30,22 @@
             <div class="login-brand-sub">Infrastruktur-Dashboard</div>
         </div>
 
-        <form class="login-form" action="/login" method="POST">
-            {% if mfa %}
-            <div>
-                <label class="login-label" for="mfa_code">2FA-Code</label>
-                <input class="login-input" type="text" id="mfa_code" name="mfa_code"
-                       placeholder="6-stelliger Code" required autofocus autocomplete="one-time-code"
-                       inputmode="numeric" pattern="[0-9]*" maxlength="6">
-            </div>
-
-            {% if error %}
-            <div class="login-error">{{ error }}</div>
-            {% endif %}
-
-            <button type="submit" class="login-btn">Bestätigen &#8594;</button>
-            {% else %}
+        <form class="login-form" action="/setup" method="POST">
+            <div class="login-brand-sub" style="text-align:center;margin-bottom:8px">Ersteinrichtung: Administrator anlegen</div>
             <div>
                 <label class="login-label" for="username">Benutzername</label>
-                <input class="login-input" type="text" id="username" name="username"
-                       placeholder="Benutzername" required autofocus autocomplete="username">
+                <input class="login-input" type="text" id="username" name="username" value="admin" required autofocus autocomplete="username">
             </div>
-
             <div>
-                <label class="login-label" for="password">Passwort</label>
-                <input class="login-input" type="password" id="password" name="password"
-                       placeholder="Passwort" required autocomplete="current-password">
+                <label class="login-label" for="password">Passwort (mind. 10 Zeichen)</label>
+                <input class="login-input" type="password" id="password" name="password" minlength="10" required autocomplete="new-password">
             </div>
-
-            {% if error %}
-            <div class="login-error">{{ error }}</div>
-            {% endif %}
-
-            <button type="submit" class="login-btn">Anmelden &#8594;</button>
-            {% endif %}
+            <div>
+                <label class="login-label" for="password2">Passwort wiederholen</label>
+                <input class="login-input" type="password" id="password2" name="password2" minlength="10" required autocomplete="new-password">
+            </div>
+            {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+            <button type="submit" class="login-btn">Administrator anlegen &#8594;</button>
         </form>
 
         
