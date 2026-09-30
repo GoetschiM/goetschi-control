@@ -80,6 +80,9 @@ PROXMOX_API  = f"https://{PROXMOX_HOST}:8006/api2/json"
 PROXMOX_NODE = os.environ.get('PROXMOX_NODE', 'pve01')
 PROXMOX_USER = os.environ.get('PROXMOX_USER', 'root@pam')
 PROXMOX_PASS = os.environ.get('PROXMOX_PASS', '')
+# Alternative zum Root-Passwort: API-Token (user@realm!tokenid=secret), z.B. mit PVEAuditor-Rolle
+PROXMOX_TOKEN = os.environ.get('PROXMOX_TOKEN', '')
+MCP_TOKEN    = os.environ.get('MCP_TOKEN', '')
 PROMETHEUS   = os.environ.get('PROMETHEUS_URL', 'http://10.0.60.110:9090')
 LOKI_URL     = os.environ.get('LOKI_URL', 'http://10.0.60.110:3100')
 GRAFANA_URL  = os.environ.get('GRAFANA_URL', 'http://10.0.60.110:3000')
@@ -1345,11 +1348,14 @@ def _px_login():
         return _px_ticket
 
 def _px(path):
-    t = _px_login()
-    if not t: return None
+    t = None if PROXMOX_TOKEN else _px_login()
+    if not t and not PROXMOX_TOKEN: return None
     try:
         req = urllib.request.Request(f"{PROXMOX_API}{path}")
-        req.add_header('Cookie', f'PVEAuthCookie={t}')
+        if PROXMOX_TOKEN:
+            req.add_header('Authorization', f'PVEAPIToken={PROXMOX_TOKEN}')
+        else:
+            req.add_header('Cookie', f'PVEAuthCookie={t}')
         return json.loads(urllib.request.urlopen(req, timeout=5, context=_ssl_ctx).read())
     except Exception:
         return None
@@ -3637,6 +3643,94 @@ def api_exec():
     ok_n = sum(1 for r in results.values() if r.get('ok'))
     _audit_user('exec_adhoc', ','.join(tg)[:80], f'{cmd[:60]} → {ok_n}/{len(tg)} OK')
     return jsonify({'results': results, 'summary': f'{ok_n}/{len(results)} OK', 'command': cmd})
+
+# ─── MCP (Model Context Protocol, Streamable HTTP, stateless) ─────────────
+# Read-only Statusabfrage fuer Agenten. Auth: Authorization: Bearer <MCP_TOKEN>.
+
+def _mcp_hosts():
+    out = []
+    for h in run_live_checks().get('hosts', []):
+        m = h.get('metrics') or {}
+        out.append({'ct_id': h.get('ct_id'), 'name': h.get('name'), 'ip': h.get('ip'),
+                    'status': h.get('status'), 'category': h.get('category'),
+                    'os': h.get('os_name'), 'cpu_pct': m.get('cpu'), 'ram_pct': m.get('ram'),
+                    'services': h.get('services') or [],
+                    'agent_online': bool(h.get('agent'))})
+    return sorted(out, key=lambda x: (x['ct_id'] is None, x['ct_id'] or 0, x['name'] or ''))
+
+def _mcp_containers():
+    res = _px('/cluster/resources?type=vm') or {}
+    out = []
+    for r in res.get('data', []):
+        out.append({'vmid': r.get('vmid'), 'name': r.get('name'), 'type': r.get('type'),
+                    'node': r.get('node'), 'status': r.get('status'),
+                    'cores': r.get('maxcpu'), 'mem_mb': int((r.get('maxmem') or 0) / 2**20),
+                    'disk_gb': round((r.get('maxdisk') or 0) / 2**30, 1),
+                    'cpu_pct': round(float(r.get('cpu') or 0) * 100, 1)})
+    ips = discover_lxc_ips()
+    for c in out:
+        c['ip'] = (ips.get(str(c['vmid'])) or {}).get('ip')
+    return sorted(out, key=lambda x: x['vmid'] or 0)
+
+def _mcp_inventory_search(q):
+    q = (q or '').strip().lower()
+    if not q: return []
+    _inv_ensure_table()
+    conn = sqlite3.connect(AUDIT_DB)
+    rows = conn.execute('SELECT host_key,packages_json FROM inventory').fetchall()
+    conn.close()
+    hits = []
+    for hk, pj in rows:
+        try: pkgs = json.loads(pj or '{}')
+        except Exception: pkgs = {}
+        hits += [{'host_key': hk, 'package': n, 'version': v} for n, v in pkgs.items() if q in n.lower()]
+    return hits[:200]
+
+_MCP_TOOLS = {
+    'list_containers': ('Alle Proxmox-Container/VMs mit VMID, Name, Status, IP und Ressourcen.',
+                        {}, lambda a: _mcp_containers()),
+    'infra_status':    ('Live-Status aller bekannten Hosts inkl. erreichbarer Dienste/Ports und Agent-Status.',
+                        {}, lambda a: _mcp_hosts()),
+    'list_agents':     ('Registrierte gl-agent-Instanzen mit letztem Heartbeat und Auslastung.',
+                        {}, lambda a: _agents_list()),
+    'active_alerts':   ('Aktuell aktive Alarme.', {}, lambda a: run_live_checks().get('alerts', [])),
+    'find_package':    ('Sucht ein installiertes Paket ueber alle inventarisierten Hosts.',
+                        {'query': {'type': 'string', 'description': 'Paketname (Teilstring)'}},
+                        lambda a: _mcp_inventory_search(a.get('query'))),
+}
+
+@app.route('/mcp', methods=['POST', 'GET', 'DELETE'])
+def mcp_endpoint():
+    if not MCP_TOKEN or request.headers.get('Authorization', '') != f'Bearer {MCP_TOKEN}':
+        return jsonify({'error': 'unauthorized'}), 401
+    if request.method != 'POST':
+        return ('', 405)
+    msg = request.get_json(silent=True) or {}
+    mid, method, params = msg.get('id'), msg.get('method', ''), msg.get('params') or {}
+    if mid is None:                      # notification (z.B. notifications/initialized)
+        return ('', 202)
+    def ok(result): return jsonify({'jsonrpc': '2.0', 'id': mid, 'result': result})
+    if method == 'initialize':
+        return ok({'protocolVersion': params.get('protocolVersion', '2025-03-26'),
+                   'capabilities': {'tools': {}},
+                   'serverInfo': {'name': 'goetschi-control', 'version': '1.0'}})
+    if method == 'ping':
+        return ok({})
+    if method == 'tools/list':
+        return ok({'tools': [{'name': n, 'description': d,
+                              'inputSchema': {'type': 'object', 'properties': props,
+                                              'required': list(props)}}
+                             for n, (d, props, _) in _MCP_TOOLS.items()]})
+    if method == 'tools/call':
+        tool = _MCP_TOOLS.get(params.get('name'))
+        if not tool:
+            return jsonify({'jsonrpc': '2.0', 'id': mid, 'error': {'code': -32602, 'message': 'unknown tool'}})
+        try:
+            data = tool[2](params.get('arguments') or {})
+            return ok({'content': [{'type': 'text', 'text': json.dumps(data, ensure_ascii=False, default=str)}]})
+        except Exception as e:
+            return ok({'content': [{'type': 'text', 'text': f'Fehler: {e}'}], 'isError': True})
+    return jsonify({'jsonrpc': '2.0', 'id': mid, 'error': {'code': -32601, 'message': 'method not found'}})
 
 if __name__ == '__main__':
     _init_audit()
