@@ -2373,7 +2373,8 @@ def api_container_bulk():
     return jsonify({'ok': True, 'done': ok_n, 'total': len(results), 'results': results})
 
 # ─── AI ANALYSIS (LiteLLM) ─────────────────────
-def _llm_chat(messages, model='gemini-flash', max_tokens=2000, temperature=0.3):
+def _llm_chat(messages, model=None, max_tokens=2000, temperature=0.3):
+    model = model or LLM_MODEL or (_ll_read_models() or ['gpt-4o-mini'])[0]
     body = json.dumps({'model': model, 'messages': messages,
                        'max_tokens': max_tokens, 'temperature': temperature}).encode()
     req = urllib.request.Request(f'{LITELLM_URL}/v1/chat/completions', data=body, method='POST')
@@ -2751,47 +2752,53 @@ def api_grafana_dashboards():
 @login_required
 def api_integrations():
     out = []
-    def add(name, ok, detail=''):
-        out.append({'name': name, 'ok': bool(ok), 'detail': str(detail)[:140]})
-    try:
-        nd = _px(f'/nodes/{PROXMOX_NODE}/status'); add('Proxmox', bool(nd and 'data' in nd), 'API erreichbar' if nd else 'kein Zugriff')
-    except Exception as e:
-        add('Proxmox', False, e)
-    try:
-        prom = get_prometheus(); add('Prometheus', bool(prom), f'{len(prom)} Hosts mit Metriken')
-    except Exception as e:
-        add('Prometheus', False, e)
-    try:
-        ready = 'ready' in urllib.request.urlopen(f'{LOKI_URL}/ready', timeout=4).read().decode().lower()
-        cnt = 0
+    def add(name, state, detail='', how=''):
+        # state: True = ok, False = Fehler, None = nicht eingerichtet
+        out.append({'name': name, 'ok': state is True,
+                    'state': 'ok' if state is True else ('off' if state is None else 'error'),
+                    'detail': str(detail)[:160], 'how': how})
+    def check(name, configured, how, fn):
+        if not configured:
+            return add(name, None, 'nicht eingerichtet', how)
         try:
-            lv = json.loads(urllib.request.urlopen(f'{LOKI_URL}/loki/api/v1/label/container/values', timeout=4).read())
-            cnt = len(lv.get('data', []) or [])
-        except Exception:
-            pass
-        add('Loki', ready, f'{cnt} Container-Streams' if cnt else 'ready (noch keine Logs)')
-    except Exception as e:
-        add('Loki', False, e)
-    try:
-        u = get_unifi_data(); add('UniFi', bool(u), f"{len((u or {}).get('clients', []))} Clients" if u else 'kein Zugriff')
-    except Exception as e:
-        add('UniFi', False, e)
-    try:
-        ll = get_litellm_status(); add('LiteLLM', bool(ll and ll.get('alive')), 'alive' if ll and ll.get('alive') else 'down')
-    except Exception as e:
-        add('LiteLLM', False, e)
-    try:
-        ans = _llm_chat([{'role': 'user', 'content': 'sage ok'}], max_tokens=400); add('LLM Chat (gemini-flash)', bool(ans), 'antwortet' if ans else 'keine Antwort')
-    except Exception as e:
-        add('LLM Chat (gemini-flash)', False, e)
-    add('Dokploy API', bool(DOKPLOY_KEY), 'Token gesetzt' if DOKPLOY_KEY else 'kein gültiger Token (offen)')
-    try:
-        live = cache.get('live') or {}
-        lxc = [h for h in live.get('hosts', []) if h.get('ct_id')]
-        agents = [h for h in lxc if h.get('agent')]
-        add('GL-Agents', len(agents) > 0, f'{len(agents)}/{len(lxc)} erreichbar')
-    except Exception as e:
-        add('GL-Agents', False, e)
+            ok, detail = fn()
+            add(name, ok, detail, how)
+        except Exception as e:
+            add(name, False, e, how)
+    def _pve():
+        nd = _px(f'/nodes/{PROXMOX_NODE}/status')
+        return bool(nd and 'data' in nd), (f'API erreichbar · Node {PROXMOX_NODE}' if nd else 'kein Zugriff (Token/Rechte prüfen)')
+    check('Proxmox', bool(PROXMOX_HOST and (PROXMOX_TOKEN or PROXMOX_PASS)), 'PROXMOX_HOST + PROXMOX_TOKEN', _pve)
+    def _prom():
+        prom = get_prometheus(); return bool(prom), f'{len(prom)} Hosts mit Metriken'
+    check('Prometheus', bool(PROMETHEUS), 'PROMETHEUS_URL', _prom)
+    def _loki():
+        ready = 'ready' in urllib.request.urlopen(f'{LOKI_URL}/ready', timeout=4).read().decode().lower()
+        return ready, 'bereit' if ready else 'nicht bereit'
+    check('Loki', bool(LOKI_URL), 'LOKI_URL', _loki)
+    def _unifi():
+        u = get_unifi_data(); return bool(u), (f"{len((u or {}).get('clients', []))} Clients" if u else 'Login fehlgeschlagen')
+    check('UniFi', bool(UNIFI_URL and UNIFI_USER), 'UNIFI_URL + UNIFI_USER + UNIFI_PASS', _unifi)
+    def _llm():
+        ll = get_litellm_status()
+        if not (ll and ll.get('alive')):
+            return False, 'nicht erreichbar'
+        if not LITELLM_KEY:
+            return False, 'erreichbar, aber LITELLM_KEY fehlt'
+        ans = _llm_chat([{'role': 'user', 'content': 'sage ok'}], max_tokens=50)
+        return bool(ans), 'antwortet' if ans else 'keine Antwort'
+    check('KI (LiteLLM / OpenAI-kompatibel)', bool(LITELLM_URL), 'LITELLM_URL + LITELLM_KEY', _llm)
+    check('Dokploy', bool(DOKPLOY_URL), 'DOKPLOY_URL + DOKPLOY_API_KEY',
+          lambda: (bool(DOKPLOY_KEY), 'Token gesetzt' if DOKPLOY_KEY else 'DOKPLOY_API_KEY fehlt'))
+    check('Coolify', bool(COOLIFY_URL), 'COOLIFY_URL + COOLIFY_API_KEY',
+          lambda: (bool(COOLIFY_KEY), 'Token gesetzt' if COOLIFY_KEY else 'COOLIFY_API_KEY fehlt'))
+    check('Telegram-Alarme', bool(TELEGRAM_TOKEN), 'TELEGRAM_TOKEN + TELEGRAM_CHAT_ID',
+          lambda: (bool(TELEGRAM_CHAT_ID), 'bereit' if TELEGRAM_CHAT_ID else 'TELEGRAM_CHAT_ID fehlt'))
+    agents = _agents_list()
+    online = sum(1 for a in agents if not a['stale'])
+    add('Agenten', True if online else None,
+        f'{online} von {len(agents)} melden sich' if agents else 'noch keine installiert',
+        'unter „Hosts & Agenten" installieren')
     return jsonify(out)
 
 @app.route('/api/mfa/setup', methods=['POST'])
@@ -3070,26 +3077,24 @@ def api_unifi():
 
 # ─── LITELLM ──────────────────────────────────
 _ll_models_cache = {'models': [], 'ts': 0}
-_LL_FALLBACK_MODELS = ['gemini-flash', 'deepseek-v4-flash', 'gemini-2.0-flash-lite', 'openrouter-auto']
+LLM_MODEL = os.environ.get('LLM_MODEL', '')
+_LL_FALLBACK_MODELS = [LLM_MODEL] if LLM_MODEL else []
 
 def _ll_read_models():
     now = time.time()
     if now - _ll_models_cache['ts'] < 3600 and _ll_models_cache['models']:
         return _ll_models_cache['models']
     try:
-        c = _paramiko.SSHClient()
-        c.set_missing_host_key_policy(_paramiko.AutoAddPolicy())
-        c.connect(PROXMOX_HOST, port=22, username='root', password=PROXMOX_PASS,
-                  timeout=8, look_for_keys=False, allow_agent=False)
-        script = "import yaml,json;d=yaml.safe_load(open('/etc/litellm/config.yaml'));print(json.dumps(list(dict.fromkeys(x['model_name'] for x in d.get('model_list',[])))))"
-        _, out, _ = c.exec_command(f'pct exec 116 -- python3 -c "{script}"', timeout=12)
-        models = json.loads(out.read().decode().strip())
-        c.close()
-        _ll_models_cache['models'] = models
-        _ll_models_cache['ts'] = now
-        return models
+        req = urllib.request.Request(f'{LITELLM_URL}/v1/models')
+        if LITELLM_KEY:
+            req.add_header('Authorization', f'Bearer {LITELLM_KEY}')
+        models = [m['id'] for m in json.loads(urllib.request.urlopen(req, timeout=6).read()).get('data', [])]
+        if models:
+            _ll_models_cache['models'] = models
+            _ll_models_cache['ts'] = now
+        return models or _LL_FALLBACK_MODELS
     except Exception as e:
-        print(f'[LiteLLM] model parse: {e}')
+        print(f'[LiteLLM] models: {e}')
         return _ll_models_cache['models'] or _LL_FALLBACK_MODELS
 
 def get_litellm_status():

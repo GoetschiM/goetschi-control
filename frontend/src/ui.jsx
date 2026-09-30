@@ -38,7 +38,7 @@ export function MetricChart({ points = [], color = 'var(--accent)', label = '', 
   const vals = points.map(p => (typeof p === 'number' ? p : p.v)).filter(v => v != null)
   const last = vals.length ? vals[vals.length - 1] : null
   if (vals.length < 2) {
-    return <div className="chart-card"><div className="chart-head"><span>{label}</span></div><div className="muted" style={{ padding: 24 }}>zu wenig Daten</div></div>
+    return <div className="chart-card"><div className="chart-head"><span>{label}</span></div><div className="muted" style={{ padding: 24 }}>Noch zu wenige Messpunkte. Werte werden jede Minute gespeichert.</div></div>
   }
   const max = 100, min = 0
   const innerW = W - padL, innerH = H - padB - padT

@@ -404,3 +404,8 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg-elev-2); b
 .setup-step.done { opacity: .6; }
 .setup-step.done .check { background: var(--ok); border-color: var(--ok); color: #0b0e14; font-weight: 800; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.s-off { background: var(--text-mute); }
+.int-state { width: 150px; font-size: 12px; font-weight: 600; }
+.int-state.ok { color: var(--ok); }
+.int-state.error { color: var(--crit); }
+.int-state.off { color: var(--text-mute); font-weight: 500; }

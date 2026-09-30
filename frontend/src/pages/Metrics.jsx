@@ -27,11 +27,14 @@ export default function Metrics() {
   const topCpu = [...hosts].filter(h => h.metrics?.cpu != null).sort((a, b) => b.metrics.cpu - a.metrics.cpu).slice(0, 6)
   const topRam = [...hosts].filter(h => h.metrics?.ram != null).sort((a, b) => b.metrics.ram - a.metrics.ram).slice(0, 6)
 
+  if (!live) return <div className="center-msg">Hosts werden geladen …</div>
+  if (!hosts.length) return <div className="center-msg">Noch keine Hosts erfasst. Unter „Hosts &amp; Agenten“ kannst du welche hinzufügen.</div>
+
   return (
     <>
       <div className="ai-bar" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16 }}>
         <select className="inp" value={hostKey} onChange={e => setHostKey(e.target.value)}>
-          {hosts.map(h => <option key={h.key} value={h.key}>{h.name}</option>)}
+          {[...hosts].sort((a, b) => a.name.localeCompare(b.name)).map(h => <option key={h.key} value={h.key}>{h.name}{h.ct_id ? ` (CT ${h.ct_id})` : ''}</option>)}
         </select>
       </div>
 
