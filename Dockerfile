@@ -15,9 +15,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 COPY templates/ templates/
+COPY agent/ agent/
 COPY static/ static/
 # overlay the freshly built SPA
 COPY --from=frontend /app/static/spa ./static/spa
 
+ENV AUDIT_DB=/data/audit.db
+VOLUME /data
 EXPOSE 8080
 CMD ["python", "app.py"]

@@ -1,0 +1,14 @@
+services:
+  rrm:
+    build: .
+    image: rrm:latest
+    restart: unless-stopped
+    ports:
+      - "8181:8080"
+    volumes:
+      - rrm-data:/data
+    env_file:
+      - path: .env
+        required: false
+volumes:
+  rrm-data:
