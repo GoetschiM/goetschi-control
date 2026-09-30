@@ -1,0 +1,15 @@
+[Unit]
+Description=RRM infrastructure dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/rrm
+EnvironmentFile=/etc/rrm.env
+ExecStart=/opt/rrm/venv/bin/python app.py
+Restart=always
+RestartSec=5
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target

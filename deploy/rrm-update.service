@@ -1,0 +1,7 @@
+[Unit]
+Description=RRM: Update von GitHub
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/rrm.env
+ExecStart=/opt/rrm/deploy/update.sh

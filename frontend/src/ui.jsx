@@ -2,7 +2,8 @@
 
 export function Pill({ status }) {
   const s = status || 'offline'
-  return <span className={`pill ${s}`}>{s}</span>
+  const label = { online: 'online', degraded: 'eingeschränkt', offline: 'offline' }[s] || s
+  return <span className={`pill ${s}`}>{label}</span>
 }
 
 export function StatusDot({ status }) {

@@ -45,6 +45,11 @@
 
             <button type="submit" class="login-btn">Bestätigen &#8594;</button>
             {% else %}
+            {% if sso %}
+            <a class="login-btn" href="/auth/oidc/login" style="display:block;text-align:center;text-decoration:none">Mit {{ sso_name }} anmelden &#8594;</a>
+            {% if not sso_only %}<div style="text-align:center;font-size:12px;opacity:.5;margin:4px 0">oder mit Passwort</div>{% endif %}
+            {% endif %}
+            {% if not sso_only %}
             <div>
                 <label class="login-label" for="username">Benutzername</label>
                 <input class="login-input" type="text" id="username" name="username"
@@ -62,6 +67,8 @@
             {% endif %}
 
             <button type="submit" class="login-btn">Anmelden &#8594;</button>
+            {% endif %}
+            {% if sso_only and error %}<div class="login-error">{{ error }}</div>{% endif %}
             {% endif %}
         </form>
 

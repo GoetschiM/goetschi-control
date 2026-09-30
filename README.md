@@ -12,6 +12,18 @@ connect things: hosts, agents, Proxmox, UniFi, your own tooling via MCP.
 
 ## Quick start
 
+**Without Docker** (Debian/Ubuntu, e.g. a small LXC with 1 CPU / 512 MB). Installs to `/opt/rrm`
+and keeps itself up to date from `main` every 10 minutes, with automatic rollback if a new version fails to start:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/GoetschiM/goetschi-control/main/deploy/install.sh | bash
+```
+
+Configuration lives in `/etc/rrm.env`; restart with `systemctl restart rrm`. Disable updates with
+`systemctl disable --now rrm-update.timer`.
+
+**With Docker:**
+
 ```bash
 git clone https://github.com/GoetschiM/goetschi-control rrm && cd rrm
 cp .env.example .env        # optional, everything can stay empty
@@ -21,12 +33,13 @@ docker compose up -d
 Open `http://<host>:8181`. The first visit asks you to create the administrator.
 Nothing is preconfigured: no users, hosts, addresses or tokens ship with the code.
 
-Without Docker: `pip install -r requirements.txt`, build the UI once
+Manual: `pip install -r requirements.txt`, build the UI once
 (`cd frontend && npm install && npm run build`), then `python app.py`.
 
 ## Growing your setup
 
-Everything is under **Verbinden** in the sidebar:
+The overview shows a setup checklist until the basics are connected. Everything is under
+**Hosts & Agenten** in the sidebar. Press `Ctrl+K` anywhere to jump to a host or page.
 
 1. **Install an agent** on a host. Copy the one-liner, run it as root on the target.
    The host appears within a minute.
@@ -46,6 +59,14 @@ pveum user token add rrm@pve dash --privsep 0
 ```
 
 Containers are then discovered automatically with name, IP, CPU and RAM.
+
+### Single sign-on (OIDC)
+
+Works with Authentik, Keycloak, Entra ID, Google and other OpenID Connect providers.
+Create an OAuth2/OIDC application with redirect URI `<DASHBOARD_URL>/auth/oidc/callback`,
+then set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (see `.env.example`).
+Users are created on first login; members of `OIDC_ADMIN_GROUP` become admins.
+For Authentik the issuer looks like `https://auth.example.com/application/o/<slug>`.
 
 ### MCP tools
 

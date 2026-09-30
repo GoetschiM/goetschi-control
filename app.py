@@ -2146,6 +2146,8 @@ def login_page():
             return render_template('login.html', error='Falscher 2FA-Code', mfa=True)
 
         # ── step 1: username + password ──
+        if OIDC_ONLY and oidc_enabled():
+            return render_template('login.html', error='Anmeldung nur über SSO'), 403
         u = request.form.get('username', '').strip().lower()
         p = request.form.get('password', '')
         ok, role = False, 'admin'
@@ -3608,7 +3610,7 @@ BRAND = os.environ.get('BRAND_NAME', 'RRM')
 
 @app.context_processor
 def _inject_brand():
-    return {'brand': BRAND}
+    return {'brand': BRAND, 'sso': oidc_enabled(), 'sso_name': OIDC_NAME, 'sso_only': OIDC_ONLY and oidc_enabled()}
 
 def _user_count():
     _users_ensure()
@@ -3699,6 +3701,7 @@ def api_connect():
         'agent_token': GL_AGENT_TOKEN,
         'mcp_token':  MCP_TOKEN,
         'mcp_url':    f'{hub}/mcp',
+        'agents':     sum(1 for a in _agents_list() if not a['stale']),
         'install_cmd': f'curl -fsSL {hub}/agent/install.sh | GL_TOKEN={GL_AGENT_TOKEN} sh',
         'mcp_cmd':    f'claude mcp add --transport http rrm {hub}/mcp --header "Authorization: Bearer {MCP_TOKEN}"',
         'integrations': {
@@ -3789,6 +3792,89 @@ def api_scan():
         found = [x for x in pool.map(probe, ips) if x]
     _audit_user('network_scan', '', f'{cidr}: {len(found)} Hosts')
     return jsonify({'ok': True, 'cidr': str(net), 'hosts': found})
+
+# ─── SSO (OpenID Connect: Authentik, Keycloak, Entra ID, Google, …) ───────
+OIDC_ISSUER        = os.environ.get('OIDC_ISSUER', '').rstrip('/')
+OIDC_CLIENT_ID     = os.environ.get('OIDC_CLIENT_ID', '')
+OIDC_CLIENT_SECRET = os.environ.get('OIDC_CLIENT_SECRET', '')
+OIDC_NAME          = os.environ.get('OIDC_NAME', 'SSO')
+OIDC_ADMIN_GROUP   = os.environ.get('OIDC_ADMIN_GROUP', '')      # Mitglieder werden Admin
+OIDC_DEFAULT_ROLE  = os.environ.get('OIDC_DEFAULT_ROLE', 'viewer')
+OIDC_ONLY          = os.environ.get('OIDC_ONLY', '0') == '1'     # Passwort-Login ausblenden
+
+def oidc_enabled():
+    return bool(OIDC_ISSUER and OIDC_CLIENT_ID and OIDC_CLIENT_SECRET)
+
+def _oidc_config():
+    cfg = cache.get('oidc_cfg', ttl=3600)
+    if cfg:
+        return cfg
+    url = OIDC_ISSUER + '/.well-known/openid-configuration'
+    cfg = json.loads(urllib.request.urlopen(url, timeout=6, context=_ssl_ctx).read())
+    cache.set('oidc_cfg', cfg)
+    return cfg
+
+def _oidc_redirect_uri():
+    return _hub_url() + '/auth/oidc/callback'
+
+@app.route('/auth/oidc/login')
+def oidc_login():
+    if not oidc_enabled():
+        return redirect(url_for('login_page'))
+    try:
+        cfg = _oidc_config()
+    except Exception as e:
+        return render_template('login.html', error=f'SSO nicht erreichbar: {e}'), 502
+    state, nonce = _sec.token_urlsafe(24), _sec.token_urlsafe(24)
+    session['oidc_state'], session['oidc_nonce'] = state, nonce
+    q = urllib.parse.urlencode({'response_type': 'code', 'client_id': OIDC_CLIENT_ID,
+                                'redirect_uri': _oidc_redirect_uri(), 'scope': 'openid email profile groups',
+                                'state': state, 'nonce': nonce})
+    return redirect(f"{cfg['authorization_endpoint']}?{q}")
+
+@app.route('/auth/oidc/callback')
+def oidc_callback():
+    if not oidc_enabled():
+        return redirect(url_for('login_page'))
+    state = session.pop('oidc_state', None)
+    if not state or request.args.get('state') != state or 'code' not in request.args:
+        return render_template('login.html', error='SSO-Anmeldung abgebrochen oder abgelaufen'), 400
+    try:
+        cfg = _oidc_config()
+        body = urllib.parse.urlencode({'grant_type': 'authorization_code', 'code': request.args['code'],
+                                       'redirect_uri': _oidc_redirect_uri(), 'client_id': OIDC_CLIENT_ID,
+                                       'client_secret': OIDC_CLIENT_SECRET}).encode()
+        req = urllib.request.Request(cfg['token_endpoint'], data=body, method='POST')
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        tok = json.loads(urllib.request.urlopen(req, timeout=8, context=_ssl_ctx).read())
+        # Identitaet ueber den userinfo-Endpunkt (TLS zum Issuer) statt lokaler JWT-Pruefung
+        ureq = urllib.request.Request(cfg['userinfo_endpoint'])
+        ureq.add_header('Authorization', f"Bearer {tok['access_token']}")
+        info = json.loads(urllib.request.urlopen(ureq, timeout=8, context=_ssl_ctx).read())
+    except Exception as e:
+        _audit('?', 'login_fail', '', f'SSO-Fehler: {e}')
+        return render_template('login.html', error='SSO-Anmeldung fehlgeschlagen'), 502
+    u = (info.get('preferred_username') or info.get('email') or info.get('sub') or '').strip().lower()
+    if not u:
+        return render_template('login.html', error='SSO lieferte keinen Benutzernamen'), 400
+    groups = info.get('groups') or []
+    role = 'admin' if (OIDC_ADMIN_GROUP and OIDC_ADMIN_GROUP in groups) else None
+    _users_ensure()
+    conn = sqlite3.connect(AUDIT_DB)
+    row = conn.execute('SELECT role FROM users WHERE username=?', (u,)).fetchone()
+    if row is None:
+        role = role or (OIDC_DEFAULT_ROLE if OIDC_DEFAULT_ROLE in ('admin', 'viewer') else 'viewer')
+        # Zufaelliges Passwort: SSO-Benutzer melden sich nur ueber SSO an
+        conn.execute('INSERT INTO users (username,pw_hash,role,created_at) VALUES (?,?,?,?)',
+                     (u, generate_password_hash(_sec.token_urlsafe(32)), role, time.strftime('%Y-%m-%dT%H:%M:%S')))
+    else:
+        if role and row[0] != role:
+            conn.execute('UPDATE users SET role=? WHERE username=?', (role, u))
+        role = role or row[0] or 'viewer'
+    conn.commit(); conn.close()
+    _login_finalize(u, role)
+    session['sso'] = True
+    return redirect(url_for('index'))
 
 # ─── MCP (Model Context Protocol, Streamable HTTP, stateless) ─────────────
 # Read-only Statusabfrage fuer Agenten. Auth: Authorization: Bearer <MCP_TOKEN>.

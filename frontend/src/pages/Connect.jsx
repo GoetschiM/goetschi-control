@@ -124,11 +124,11 @@ export default function Connect() {
         )}
       </div>
 
-      <div className="group-title">3 · Integrationen</div>
+      <div className="group-title" id="integrations">3 · Integrationen</div>
       <div className="panel">
         <div className="muted" style={{ marginBottom: 10 }}>
           Werte in der Umgebung des Dashboards setzen (Docker-Env oder <span className="mono">.env</span>) und neu starten.
-          Jede Integration ist optional.
+          Jede Integration ist optional. Den Live-Selbsttest aller Verbindungen findest du unter <a href="/integrations" style={{ color: 'var(--accent)' }}>Integrationen</a>.
         </div>
         {INTEGRATIONS.map(([k, n, how]) => (
           <div className="kv" key={k}>

@@ -32,7 +32,7 @@ export default function Integrations() {
         ))}
       </div>
       <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-        Live-Selbsttest aller angebundenen Systeme. „Loki leer" und „Dokploy kein Token" sind bekannte offene Punkte.
+        Live-Selbsttest aller angebundenen Systeme. Nicht konfigurierte Integrationen richtest du unter „Hosts & Agenten" ein.
       </p>
     </>
   )
