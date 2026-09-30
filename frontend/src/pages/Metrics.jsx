@@ -34,7 +34,6 @@ export default function Metrics() {
         <select className="inp" value={hostKey} onChange={e => setHostKey(e.target.value)}>
           {hosts.map(h => <option key={h.key} value={h.key}>{h.name}</option>)}
         </select>
-        <a className="btn" href={GRAFANA_URL} target="_blank" rel="noreferrer">📊 In Grafana öffnen</a>
       </div>
 
       <div className="charts">
