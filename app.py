@@ -292,6 +292,9 @@ STATIC_HOSTS = {
     ]),
 }
 
+# Feste Eintraege mit falscher Bezeichnung (Proxmox-Name ist massgeblich)
+STALE_STATIC = {'voice'}
+
 DEPENDENCIES = {
     'control':    ['proxmox', 'monitoring'],
     'nova':       ['proxmox', 'monitoring', 'litellm'],
@@ -1408,6 +1411,15 @@ def run_discovery():
         return cached
 
     lxc_ips    = discover_lxc_ips()
+    # Veraltete feste Eintraege entfernen: Container, die auf diesem Node nicht (mehr) laufen
+    # oder eine andere IP haben, werden stattdessen aus Proxmox automatisch erkannt.
+    if lxc_ips:
+        for k, v in list(STATIC_HOSTS.items()):
+            if v[4] is None:
+                continue
+            info = lxc_ips.get(str(v[4]))
+            if k in STALE_STATIC or not info or info['status'] != 'running' or (info.get('ip') and info['ip'] != v[1]):
+                STATIC_HOSTS.pop(k, None)
     static_ips = {v[1] for v in STATIC_HOSTS.values()}
     ct_id_map  = {v[4]: k for k, v in STATIC_HOSTS.items() if v[4]}
     new_hosts  = []
@@ -1427,8 +1439,6 @@ def run_discovery():
             continue
 
         open_ports = scan_ports_fast(ip)
-        if not open_ports:
-            continue
 
         svcs = []
         for port in open_ports:
