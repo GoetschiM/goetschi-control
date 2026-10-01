@@ -4159,8 +4159,9 @@ def _agy_run(prompt, conversation=None, execute=False, timeout=None):
         d = json.loads(r.stdout.strip().splitlines()[-1])
     except Exception:
         return {'ok': False, 'error': (r.stderr or r.stdout or 'keine Ausgabe von agy')[-500:]}
-    ok = d.get('status') == 'SUCCESS'
     answer = (d.get('response') or '').strip()
+    # agy meldet gelegentlich status=ERROR trotz vollstaendiger Antwort -> Antwort zaehlt
+    ok = d.get('status') == 'SUCCESS' or bool(answer)
     denied = [a.get('display_name') or a.get('action') for a in (d.get('denied_actions') or [])]
     if denied:
         note = ('Für diesen Schritt brauchte ich Rechte, die im Fragemodus gesperrt sind ('
