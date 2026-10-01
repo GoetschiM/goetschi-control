@@ -3909,6 +3909,10 @@ CONFIG_FIELDS = [
         ('LITELLM_KEY', 'API-Key', True, ''),
         ('LLM_MODEL', 'Modell (leer = erstes verfügbares)', False, ''),
     ]),
+    ('GitHub (KI-Entwicklung)', [
+        ('GITHUB_REPO', 'Repository (owner/name)', False, 'GoetschiM/goetschi-control'),
+        ('GITHUB_TOKEN', 'Token mit Contents + Pull requests: Read and write', True, 'github_pat_…'),
+    ]),
     ('Logs & Metriken', [
         ('LOKI_URL', 'Loki', False, 'http://127.0.0.1:3100'),
         ('PROMETHEUS_URL', 'Prometheus', False, ''),
@@ -4144,6 +4148,8 @@ def _agy_run(prompt, conversation=None, execute=False, timeout=None):
     if conversation:
         cmd += ['--conversation', conversation]
     env = dict(os.environ, HOME=AGY_HOME, PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin')
+    if os.environ.get('GITHUB_TOKEN'):
+        env['GH_TOKEN'] = os.environ['GITHUB_TOKEN']   # fuer gh/git im Ausfuehren-Modus
     os.makedirs(AGY_WORKDIR, exist_ok=True)
     with _agy_lock:
         r = subprocess.run(cmd, cwd=AGY_WORKDIR, env=env, capture_output=True, text=True, timeout=t + 30)
@@ -4176,7 +4182,8 @@ def _ai_log(conv, role, mode, text, user, host_key=None):
     conn.commit(); conn.close()
 
 _AGY_FIRST_PROMPT = (
-    'Du arbeitest im {brand} (RRM) auf diesem Container. Lies bei Bedarf AGENTS.md in deinem Arbeitsordner. '
+    'Du arbeitest im {brand} (RRM) auf diesem Container. Halte dich an RRM.md (und AGENTS.md, falls vorhanden) '
+    'in deinem Arbeitsordner. '
     'Aktueller Kurzstatus aus dem Dashboard:\n{ctx}\n\n'
     'Antworte auf Deutsch, knapp und konkret. Wenn eine Aenderung noetig ist, beschreibe sie als '
     'nummerierten Plan (was, wo, Risiko, wie rueckgaengig). In diesem Schritt darfst du nur lesen: '
@@ -4331,21 +4338,161 @@ def _mcp_inventory_search(q):
         hits += [{'host_key': hk, 'package': n, 'version': v} for n, v in pkgs.items() if q in n.lower()]
     return hits[:200]
 
+def _mcp_find_host(ref):
+    """Host per Schluessel, Name, IP oder CT-Nummer finden."""
+    ref = str(ref or '').strip().lower()
+    for h in (run_live_checks().get('hosts') or []):
+        if ref in (str(h.get('key', '')).lower(), str(h.get('name', '')).lower(), str(h.get('ip', '')),
+                   str(h.get('ct_id', ''))):
+            return h
+    return None
+
+def _mcp_host_detail(a):
+    h = _mcp_find_host(a.get('host'))
+    if not h:
+        return {'error': 'Host nicht gefunden (Name, IP oder CT-Nummer angeben)'}
+    out = {k: h.get(k) for k in ('key', 'name', 'ip', 'ct_id', 'status', 'status_reason', 'os_name', 'metrics', 'services')}
+    d = get_agent_docker(h['ip']) if h.get('ip') else None
+    out['docker'] = (d or {}).get('containers') if d else 'kein Agent'
+    return out
+
+def _mcp_logs(a):
+    if not LOKI_URL:
+        return {'error': 'Loki ist nicht eingerichtet'}
+    q = (a.get('logql') or '').strip()
+    if not q:
+        h = _mcp_find_host(a.get('host')) if a.get('host') else None
+        sel = f'host="{h["ip"]}"' if h else 'job=~".+"'
+        flt = (a.get('contains') or '').replace('"', '')
+        q = '{' + sel + '}' + (f' |= "{flt}"' if flt else '')
+    limit = max(1, min(int(a.get('limit') or 50), 300))
+    minutes = max(1, min(int(a.get('minutes') or 60), 1440))
+    params = urllib.parse.urlencode({'query': q, 'limit': limit, 'direction': 'backward',
+                                     'start': str(int((time.time() - minutes * 60) * 1e9))})
+    d = json.loads(urllib.request.urlopen(f'{LOKI_URL}/loki/api/v1/query_range?{params}', timeout=10).read())
+    lines = []
+    for st in d.get('data', {}).get('result', []):
+        lab = st.get('stream', {})
+        src = lab.get('hostname') or lab.get('host') or ''
+        unit = lab.get('container') or lab.get('unit') or ''
+        for ts, msg in st.get('values', []):
+            lines.append({'ts': int(ts) // 10**9, 'src': f'{src}/{unit}', 'msg': msg[:400]})
+    lines.sort(key=lambda x: x['ts'], reverse=True)
+    return {'query': q, 'lines': lines[:limit]}
+
+def _mcp_events(a):
+    n = max(1, min(int(a.get('limit') or 50), 300))
+    conn = sqlite3.connect(AUDIT_DB)
+    rows = conn.execute('SELECT ts,user,action,host_key,detail FROM audit ORDER BY id DESC LIMIT ?', (n,)).fetchall()
+    conn.close()
+    return [{'ts': r[0], 'user': r[1], 'action': r[2], 'host': r[3], 'detail': r[4]} for r in rows]
+
+def _mcp_network(a):
+    if not (UNIFI_URL and UNIFI_USER):
+        return {'error': 'UniFi ist nicht eingerichtet'}
+    return get_unifi_data() or {'error': 'UniFi nicht erreichbar'}
+
+# Nur lesend. Ist in agy ohne Rueckfrage freigegeben.
 _MCP_TOOLS = {
     'list_containers': ('Alle Proxmox-Container/VMs mit VMID, Name, Status, IP und Ressourcen.',
                         {}, lambda a: _mcp_containers()),
     'infra_status':    ('Live-Status aller bekannten Hosts inkl. erreichbarer Dienste/Ports und Agent-Status.',
                         {}, lambda a: _mcp_hosts()),
+    'host_detail':     ('Details zu einem Host: Status, Dienste, Docker-Container (via Agent).',
+                        {'host': {'type': 'string', 'description': 'Name, IP oder CT-Nummer'}}, _mcp_host_detail),
     'list_agents':     ('Registrierte gl-agent-Instanzen mit letztem Heartbeat und Auslastung.',
                         {}, lambda a: _agents_list()),
     'active_alerts':   ('Aktuell aktive Alarme.', {}, lambda a: run_live_checks().get('alerts', [])),
+    'query_logs':      ('Logs aus Loki. Entweder host (+ optional contains) oder eine eigene logql-Abfrage.',
+                        {'host': {'type': 'string', 'description': 'Name, IP oder CT-Nummer (optional)'},
+                         'contains': {'type': 'string', 'description': 'Textfilter (optional)'},
+                         'logql': {'type': 'string', 'description': 'eigene LogQL-Abfrage (optional)'},
+                         'minutes': {'type': 'integer', 'description': 'Zeitraum, Standard 60'},
+                         'limit': {'type': 'integer', 'description': 'max. Zeilen, Standard 50'}}, _mcp_logs),
+    'network_status':  ('UniFi: WAN, Geraete, Clients (Top 20 nach Traffic).', {}, _mcp_network),
+    'recent_events':   ('Letzte Aktionen im RRM-Protokoll (wer hat was wann gemacht).',
+                        {'limit': {'type': 'integer', 'description': 'Anzahl, Standard 50'}}, _mcp_events),
     'find_package':    ('Sucht ein installiertes Paket ueber alle inventarisierten Hosts.',
                         {'query': {'type': 'string', 'description': 'Paketname (Teilstring)'}},
                         lambda a: _mcp_inventory_search(a.get('query'))),
 }
 
+def _mcp_admin_docker(a):
+    h = _mcp_find_host(a.get('host'))
+    if not h:
+        return {'ok': False, 'error': 'Host nicht gefunden'}
+    act = a.get('action')
+    if act == 'remove' and not a.get('confirm'):
+        return {'ok': False, 'error': 'remove braucht confirm=true'}
+    r = _agent_call(h['ip'], '/docker/action', {'name': a.get('name', ''), 'action': act, 'confirm': bool(a.get('confirm'))})
+    _audit('ki', 'docker_' + str(act), h['key'], f"{a.get('name')}: {r.get('msg') or r.get('error')}")
+    cache.bust()
+    return r
+
+def _mcp_admin_agent(a):
+    h = _mcp_find_host(a.get('host'))
+    if not h:
+        return {'ok': False, 'error': 'Host nicht gefunden'}
+    r = _agent_call(h['ip'], '/update', {'url': f'{DASHBOARD_URL_OR_LOCAL()}/agent/gl-agent.py'})
+    _audit('ki', 'agent_update', h['key'], r.get('msg') or r.get('error') or '')
+    return r
+
+def DASHBOARD_URL_OR_LOCAL():
+    return os.environ.get('DASHBOARD_URL', '').rstrip('/') or f"http://127.0.0.1:{os.environ.get('PORT', '8080')}"
+
+def _mcp_admin_lxc(a):
+    h = _mcp_find_host(a.get('host'))
+    if not h or not h.get('ct_id'):
+        return {'ok': False, 'error': 'Proxmox-Container nicht gefunden'}
+    act = a.get('action')
+    if act not in ('start', 'shutdown', 'reboot'):
+        return {'ok': False, 'error': 'erlaubt: start, shutdown, reboot'}
+    r = _px_write('POST', f"/nodes/{PROXMOX_NODE}/lxc/{h['ct_id']}/status/{act}", {})
+    _audit('ki', f'lxc_{act}', h['key'], 'ok' if r.get('ok') else r.get('error', ''))
+    return r
+
+def _mcp_admin_backup(a):
+    vmid = int(a.get('vmid') or 0)
+    r = _px_write('POST', f'/nodes/{PROXMOX_NODE}/vzdump',
+                  {'vmid': vmid, 'storage': a.get('storage') or 'local', 'mode': 'snapshot', 'compress': 'zstd'})
+    _audit('ki', 'pve_backup', f'ct{vmid}', 'gestartet' if r.get('ok') else r.get('error', ''))
+    return r
+
+def _mcp_admin_onboot(a):
+    vmid = int(a.get('vmid') or 0)
+    r = _px_write('PUT', f'/nodes/{PROXMOX_NODE}/lxc/{vmid}/config', {'onboot': 1 if a.get('on') else 0})
+    _audit('ki', 'pve_onboot', f'ct{vmid}', 'an' if a.get('on') else 'aus')
+    return r
+
+# Aendernd. Nur ueber /mcp/admin, in agy NICHT vorab freigegeben -> erst nach "Plan ausfuehren".
+_MCP_ADMIN_TOOLS = {
+    'docker_action':   ('Docker-Container verwalten: start, stop, restart, autostart_on, autostart_off, remove (confirm=true).',
+                        {'host': {'type': 'string', 'description': 'Name, IP oder CT-Nummer'},
+                         'name': {'type': 'string', 'description': 'Container-Name'},
+                         'action': {'type': 'string', 'description': 'start|stop|restart|autostart_on|autostart_off|remove'},
+                         'confirm': {'type': 'boolean', 'description': 'nur fuer remove'}}, _mcp_admin_docker),
+    'agent_update':    ('Agent auf einem Host auf die aktuelle Version bringen.',
+                        {'host': {'type': 'string', 'description': 'Name, IP oder CT-Nummer'}}, _mcp_admin_agent),
+    'container_power': ('Proxmox-Container starten, herunterfahren oder neu starten.',
+                        {'host': {'type': 'string', 'description': 'Name, IP oder CT-Nummer'},
+                         'action': {'type': 'string', 'description': 'start|shutdown|reboot'}}, _mcp_admin_lxc),
+    'backup_container':('Proxmox-Backup eines Containers starten.',
+                        {'vmid': {'type': 'integer', 'description': 'CT-Nummer'},
+                         'storage': {'type': 'string', 'description': 'Backup-Speicher, Standard local'}}, _mcp_admin_backup),
+    'set_autostart':   ('Autostart eines Proxmox-Containers an/aus.',
+                        {'vmid': {'type': 'integer', 'description': 'CT-Nummer'},
+                         'on': {'type': 'boolean', 'description': 'true = an'}}, _mcp_admin_onboot),
+}
+
 @app.route('/mcp', methods=['POST', 'GET', 'DELETE'])
 def mcp_endpoint():
+    return _mcp_serve(_MCP_TOOLS, 'rrm')
+
+@app.route('/mcp/admin', methods=['POST', 'GET', 'DELETE'])
+def mcp_admin_endpoint():
+    return _mcp_serve(_MCP_ADMIN_TOOLS, 'rrm-admin')
+
+def _mcp_serve(tools, server_name):
     if not MCP_TOKEN or request.headers.get('Authorization', '') != f'Bearer {MCP_TOKEN}':
         return jsonify({'error': 'unauthorized'}), 401
     if request.method != 'POST':
@@ -4358,16 +4505,16 @@ def mcp_endpoint():
     if method == 'initialize':
         return ok({'protocolVersion': params.get('protocolVersion', '2025-03-26'),
                    'capabilities': {'tools': {}},
-                   'serverInfo': {'name': 'rrm', 'version': '1.0'}})
+                   'serverInfo': {'name': server_name, 'version': '1.1'}})
     if method == 'ping':
         return ok({})
     if method == 'tools/list':
         return ok({'tools': [{'name': n, 'description': d,
                               'inputSchema': {'type': 'object', 'properties': props,
-                                              'required': list(props)}}
-                             for n, (d, props, _) in _MCP_TOOLS.items()]})
+                                              'required': [k for k in props if k in ('host', 'name', 'action', 'vmid', 'query')]}}
+                             for n, (d, props, _) in tools.items()]})
     if method == 'tools/call':
-        tool = _MCP_TOOLS.get(params.get('name'))
+        tool = tools.get(params.get('name'))
         if not tool:
             return jsonify({'jsonrpc': '2.0', 'id': mid, 'error': {'code': -32602, 'message': 'unknown tool'}})
         try:
