@@ -60,6 +60,19 @@ pveum user token add rrm@pve dash --privsep 0
 
 Containers are then discovered automatically with name, IP, CPU and RAM.
 
+### AI assistant (Antigravity CLI)
+
+RRM uses [Antigravity CLI](https://antigravity.google) (`agy`) as its assistant when it is installed
+on the same machine. Install it, sign in once by running `agy`, then connect it:
+
+```bash
+sudo bash /opt/rrm/deploy/agy-setup.sh
+```
+
+Questions run with read-only access (the RRM MCP tools). When the assistant proposes a change,
+an admin can approve it with **Plan ausführen**; only then does it run with full rights. Every
+question and execution is logged. Set `AI_PROVIDER=litellm` to use an OpenAI-compatible endpoint instead.
+
 ### Single sign-on (OIDC)
 
 Works with Authentik, Keycloak, Entra ID, Google and other OpenID Connect providers.

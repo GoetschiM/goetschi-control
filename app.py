@@ -4135,10 +4135,12 @@ def ai_ready():
     return agy_available() if ai_provider() == 'agy' else bool(LITELLM_URL and LITELLM_KEY)
 
 def _agy_run(prompt, conversation=None, execute=False, timeout=None):
-    # Ein Turn von agy. execute=False -> Plan-Modus (keine Aenderungen).
+    # Ein Turn von agy. execute=False: nur was in der agy-Freigabeliste steht (lesende
+    # RRM-Werkzeuge per MCP), alles andere wird abgelehnt. execute=True: volle Rechte.
     t = timeout or AGY_TIMEOUT
     cmd = [AGY_BIN, '-p', prompt, '--output-format', 'json', '--print-timeout', f'{t}s']
-    cmd += ['--dangerously-skip-permissions'] if execute else ['--mode', 'plan']
+    if execute:
+        cmd += ['--dangerously-skip-permissions']
     if conversation:
         cmd += ['--conversation', conversation]
     env = dict(os.environ, HOME=AGY_HOME, PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin')
@@ -4150,7 +4152,13 @@ def _agy_run(prompt, conversation=None, execute=False, timeout=None):
     except Exception:
         return {'ok': False, 'error': (r.stderr or r.stdout or 'keine Ausgabe von agy')[-500:]}
     ok = d.get('status') == 'SUCCESS'
-    return {'ok': ok, 'answer': d.get('response', ''), 'conversation_id': d.get('conversation_id'),
+    answer = (d.get('response') or '').strip()
+    denied = [a.get('display_name') or a.get('action') for a in (d.get('denied_actions') or [])]
+    if denied:
+        note = ('Für diesen Schritt brauchte ich Rechte, die im Fragemodus gesperrt sind ('
+                + ', '.join(sorted(set(denied))) + '). Mit „Plan ausführen“ gibst du sie frei.')
+        answer = f'{answer}\n\n{note}' if answer else note
+    return {'ok': ok, 'answer': answer, 'denied': denied, 'conversation_id': d.get('conversation_id'),
             'duration': d.get('duration_seconds'), 'error': None if ok else d.get('status')}
 
 def _ai_db():
@@ -4171,7 +4179,9 @@ _AGY_FIRST_PROMPT = (
     'Du arbeitest im {brand} (RRM) auf diesem Container. Lies bei Bedarf AGENTS.md in deinem Arbeitsordner. '
     'Aktueller Kurzstatus aus dem Dashboard:\n{ctx}\n\n'
     'Antworte auf Deutsch, knapp und konkret. Wenn eine Aenderung noetig ist, beschreibe sie als '
-    'nummerierten Plan (was, wo, Risiko, wie rueckgaengig). Fuehre im Plan-Modus nichts aus.\n\n'
+    'nummerierten Plan (was, wo, Risiko, wie rueckgaengig). In diesem Schritt darfst du nur lesen: '
+    'nutze die rrm-Werkzeuge (list_containers, infra_status, list_agents, active_alerts, find_package). '
+    'Ausgefuehrt wird erst, wenn der Benutzer den Plan freigibt.\n\n'
     'FRAGE{host}: {q}'
 )
 
