@@ -1152,9 +1152,13 @@ _unifi_cookie  = None
 _unifi_csrf    = None
 _unifi_expiry  = 0
 
+_unifi_retry_at = 0
+
 def _unifi_login():
-    global _unifi_cookie, _unifi_csrf, _unifi_expiry
+    global _unifi_cookie, _unifi_csrf, _unifi_expiry, _unifi_retry_at
     if not UNIFI_URL or not UNIFI_USER:
+        return False
+    if time.time() < _unifi_retry_at:
         return False
     try:
         data = json.dumps({'username': UNIFI_USER, 'password': UNIFI_PASS}).encode()
@@ -1167,7 +1171,8 @@ def _unifi_login():
         _unifi_expiry = time.time() + 3500
         return True
     except Exception as e:
-        print(f'[UniFi] login failed: {e}')
+        _unifi_retry_at = time.time() + 600
+        print(f'[UniFi] login failed: {e} (naechster Versuch in 10 min)')
         return False
 
 def _unifi_get(path):
@@ -1294,14 +1299,14 @@ def discover_lxc_ips():
     if not resp or 'data' not in resp:
         return {}
     result = {}
-    for lxc in resp['data']:
+    for lxc in (resp.get('data') or []):
         vmid   = str(lxc.get('vmid', ''))
         name   = lxc.get('name', f'ct{vmid}')
         status = lxc.get('status', 'unknown')
         ip = None
         if status == 'running':
             ifaces = _px(f'/nodes/{PROXMOX_NODE}/lxc/{vmid}/interfaces')
-            if ifaces and 'data' in ifaces:
+            if ifaces and ifaces.get('data'):
                 for iface in ifaces['data']:
                     if iface.get('name', '') == 'lo':
                         continue
@@ -1617,7 +1622,7 @@ def get_cluster_resources():
     out = {}
     d = _px('/cluster/resources?type=vm')
     if d and 'data' in d:
-        for r in d['data']:
+        for r in (d.get('data') or []):
             if r.get('node') != PROXMOX_NODE:
                 continue
             vmid = r.get('vmid')
