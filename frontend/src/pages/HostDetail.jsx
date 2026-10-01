@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { usePoll, getJSON, postJSON } from '../api.js'
 import { Pill, StatusDot, MetricBar, Sparkline } from '../ui.jsx'
+import { HostAdmin, DockerActions } from './HostAdmin.jsx'
 
 export default function HostDetail() {
   const { key } = useParams()
@@ -17,6 +18,12 @@ export default function HostDetail() {
   const [busy, setBusy] = useState('')
   const [sel, setSel] = useState(() => new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [toast, setToast] = useState('')
+  const [policies, setPolicies] = useState({})
+  const flash = t => { setToast(t); setTimeout(() => setToast(''), 3500) }
+  const loadPolicies = () => getJSON(`/api/docker/${encodeURIComponent(hostKey)}/policies`)
+    .then(p => setPolicies(p && !p.error ? p : {})).catch(() => {})
+  useEffect(() => { loadPolicies() }, [hostKey])
 
   useEffect(() => {
     let alive = true
@@ -70,6 +77,7 @@ export default function HostDetail() {
 
   return (
     <>
+      {toast && <div className="toast">{toast}</div>}
       <div className="crumbs"><Link to="/">Übersicht</Link> / {host.name}</div>
       <div className="detail-head">
         <StatusDot status={host.status} />
@@ -123,6 +131,8 @@ export default function HostDetail() {
                 <StatusDot status={up ? 'online' : 'offline'} />
                 <Link to={`/host/${encodeURIComponent(hostKey)}/c/${encodeURIComponent(c.name)}`}>{c.name}</Link>
                 <span className="port">{(c.image || '').split(':')[0].split('/').pop()}</span>
+                {c.source !== 'systemd' && <DockerActions hostKey={hostKey} name={c.name} up={up} policy={policies[c.name]}
+                  onFlash={flash} onDone={loadPolicies} />}
               </div>
             )
           })}
@@ -150,6 +160,8 @@ export default function HostDetail() {
             </div>
           ))}
         </div>
+
+        <HostAdmin host={host} agentOnline={!!agent && !agent.error} onFlash={flash} />
 
         <div className="panel">
           <h3>Aktionen</h3>

@@ -31,7 +31,7 @@ Systemd (paste to /etc/systemd/system/gl-agent.service):
 import http.server, json, os, subprocess, socket, time, re, threading
 from urllib.parse import urlparse, parse_qs
 
-AGENT_VERSION     = '3.1'
+AGENT_VERSION     = '3.2'
 AGENT_PATH        = os.path.abspath(__file__)
 TOKEN             = os.environ.get('GL_AGENT_TOKEN', '')
 PORT              = int(os.environ.get('GL_AGENT_PORT', 9998))
@@ -257,6 +257,44 @@ def get_docker():
             'status': status_str, 'ports': '', 'source': 'systemd',
         })
     return containers
+
+_DOCKER_ACTIONS = {
+    'start':        ['docker', 'start'],
+    'stop':         ['docker', 'stop'],
+    'restart':      ['docker', 'restart'],
+    'autostart_on': ['docker', 'update', '--restart', 'unless-stopped'],
+    'autostart_off':['docker', 'update', '--restart', 'no'],
+    'remove':       ['docker', 'rm', '-f'],
+}
+
+def docker_action(name, action, confirm=False):
+    """Docker-Container verwalten. 'remove' verlangt confirm=True."""
+    if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.\-]{0,127}$', name or ''):
+        return {'ok': False, 'error': 'Ungültiger Container-Name'}
+    if action not in _DOCKER_ACTIONS:
+        return {'ok': False, 'error': 'Ungültige Aktion'}
+    if action == 'remove' and not confirm:
+        return {'ok': False, 'error': 'Löschen braucht confirm:true'}
+    r = subprocess.run(_DOCKER_ACTIONS[action] + [name], capture_output=True, text=True, timeout=60)
+    _docker_cache['ts'] = 0
+    if r.returncode != 0:
+        return {'ok': False, 'error': (r.stderr or r.stdout).strip()[:300]}
+    _nc_emit('docker_' + action, f'{action} {name}', 'ok', 'warn' if action == 'remove' else 'info')
+    return {'ok': True, 'msg': f'{action} {name}'}
+
+def docker_restart_policies():
+    r = subprocess.run(['docker', 'ps', '-a', '--format', '{{.Names}}'], capture_output=True, text=True, timeout=10)
+    names = [n for n in r.stdout.split() if n]
+    if not names:
+        return {}
+    r = subprocess.run(['docker', 'inspect', '--format', '{{.Name}} {{.HostConfig.RestartPolicy.Name}}'] + names,
+                       capture_output=True, text=True, timeout=15)
+    out = {}
+    for line in r.stdout.splitlines():
+        parts = line.strip().lstrip('/').split()
+        if len(parts) == 2:
+            out[parts[0]] = parts[1]
+    return out
 
 def get_logs(n=40):
     cmd = (f'journalctl -n {n} --no-pager -o short-iso --no-hostname 2>/dev/null '
@@ -577,6 +615,8 @@ class AgentHandler(http.server.BaseHTTPRequestHandler):
                 self._json(200, {'listening_ports': st.get('listening_ports', [])})
             elif path == '/procs':
                 self._json(200, {'procs': get_procs()})
+            elif path == '/docker/policies':
+                self._json(200, docker_restart_policies())
             elif path == '/docker':
                 self._json(200, {'containers': get_docker()})
             elif path == '/logs':
@@ -608,6 +648,8 @@ class AgentHandler(http.server.BaseHTTPRequestHandler):
                 self._json(200, restart_service(body.get('name', '')))
             elif path == '/update':
                 self._json(200, self_update(body.get('url', '')))
+            elif path == '/docker/action':
+                self._json(200, docker_action(body.get('name', ''), body.get('action', ''), bool(body.get('confirm'))))
             elif path == '/uninstall':
                 if not body.get('confirm'):
                     self._json(400, {'ok': False, 'error': 'confirm:true erforderlich'}); return

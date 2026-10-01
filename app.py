@@ -1791,9 +1791,16 @@ def container_action(host_key, name, action):
         return {'ok': False, 'error': 'Ungültige Aktion'}
     if not name or not _SAFE_CNAME.match(name):
         return {'ok': False, 'error': 'Ungültiger Container-Name'}
+    ip = _host_ip(host_key)
+    if ip:
+        r = _agent_call(ip, '/docker/action', {'name': name, 'action': action})
+        err = r.get('error') or ''
+        if r.get('ok') or (err and err != 'Not found' and not err.startswith('Agent nicht erreichbar')):
+            cache.bust()
+            return r
     vmid = _host_vmid(host_key)
     if not vmid:
-        return {'ok': False, 'error': 'Kein LXC / keine VMID'}
+        return {'ok': False, 'error': 'Kein Agent erreichbar und kein LXC'}
     try:
         out = _prox_exec(vmid, f'docker {action} {name} 2>&1', timeout=45).strip()
         ok = 'error' not in out.lower() and 'no such' not in out.lower()
@@ -3921,6 +3928,126 @@ def api_app_restart():
     _audit_user('app_restart', '', 'Neustart fuer neue Einstellungen')
     threading.Timer(1.0, lambda: os._exit(0)).start()
     return jsonify({'ok': True})
+
+# ─── AGENT- UND DOCKER-VERWALTUNG UEBER DEN AGENT ────────────────────────
+def _agent_call(ip, path, body=None, timeout=60):
+    req = urllib.request.Request(f'http://{ip}:{AGENT_PORT}{path}',
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 method='POST' if body is not None else 'GET')
+    req.add_header('Authorization', f'Bearer {_agent_token(ip)}')
+    req.add_header('Content-Type', 'application/json')
+    try:
+        return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read())
+        except Exception:
+            return {'ok': False, 'error': f'Agent: HTTP {e.code}'}
+    except Exception as e:
+        return {'ok': False, 'error': f'Agent nicht erreichbar: {e}'}
+
+def _host_ip(host_key):
+    h = STATIC_HOSTS.get(host_key)
+    if h:
+        return h[1]
+    for x in (cache.get('live') or {}).get('hosts', []):
+        if x.get('key') == host_key:
+            return x.get('ip')
+    return None
+
+@app.route('/api/agent-admin/<host_key>/<action>', methods=['POST'])
+@admin_required
+def api_agent_admin(host_key, action):
+    ip = _host_ip(host_key)
+    if not ip:
+        return jsonify({'ok': False, 'error': 'Host unbekannt'}), 404
+    if action == 'update':
+        r = _agent_call(ip, '/update', {'url': f'{_hub_url()}/agent/gl-agent.py'})
+    elif action == 'uninstall':
+        if not (request.get_json(silent=True) or {}).get('confirm'):
+            return jsonify({'ok': False, 'error': 'Bestätigung fehlt'}), 400
+        r = _agent_call(ip, '/uninstall', {'confirm': True})
+    else:
+        return jsonify({'ok': False, 'error': 'Unbekannte Aktion'}), 400
+    _audit_user('agent_' + action, host_key, r.get('msg') or r.get('error') or '')
+    cache.bust()
+    return jsonify(r)
+
+@app.route('/api/docker/<host_key>/policies')
+@login_required
+def api_docker_policies(host_key):
+    ip = _host_ip(host_key)
+    return jsonify(_agent_call(ip, '/docker/policies', timeout=20) if ip else {})
+
+@app.route('/api/docker/<host_key>/action', methods=['POST'])
+@admin_required
+def api_docker_action(host_key):
+    ip = _host_ip(host_key)
+    d = request.get_json(silent=True) or {}
+    if not ip:
+        return jsonify({'ok': False, 'error': 'Host unbekannt'}), 404
+    r = _agent_call(ip, '/docker/action', {'name': d.get('name', ''), 'action': d.get('action', ''),
+                                           'confirm': bool(d.get('confirm'))})
+    if r.get('error') == 'Not found':
+        r = {'ok': False, 'error': 'Agent zu alt – bitte zuerst den Agent aktualisieren'}
+    _audit_user('docker_' + str(d.get('action')), host_key, f"{d.get('name')}: {r.get('msg') or r.get('error')}")
+    cache.bust()
+    return jsonify(r)
+
+# ── Proxmox-Backups und Autostart ueber die API (Token braucht dafuer passende Rechte) ──
+def _px_write(method, path, data):
+    if not (PROXMOX_HOST and PROXMOX_TOKEN):
+        return {'ok': False, 'error': 'PROXMOX_TOKEN fehlt'}
+    _ensure_node()
+    req = urllib.request.Request(f'{PROXMOX_API}{path}', data=urllib.parse.urlencode(data).encode(), method=method)
+    req.add_header('Authorization', f'PVEAPIToken={PROXMOX_TOKEN}')
+    try:
+        d = json.loads(urllib.request.urlopen(req, timeout=15, context=_ssl_ctx).read())
+        return {'ok': True, 'data': d.get('data')}
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode('utf-8', 'replace')[:200]
+        if e.code == 403:
+            msg = 'Proxmox-Token hat dafür keine Rechte (z.B. Rolle PVEVMAdmin + Datastore.AllocateSpace)'
+        return {'ok': False, 'error': msg}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+@app.route('/api/pve/storages')
+@login_required
+def api_pve_storages():
+    _ensure_node()
+    d = _px(f'/nodes/{PROXMOX_NODE}/storage?content=backup') or {}
+    return jsonify([{'storage': s.get('storage'), 'avail_gb': round((s.get('avail') or 0) / 2**30, 1),
+                     'active': bool(s.get('active'))} for s in d.get('data', []) if s.get('active')])
+
+@app.route('/api/pve/<int:vmid>/backup', methods=['POST'])
+@admin_required
+def api_pve_backup(vmid):
+    d = request.get_json(silent=True) or {}
+    storage = d.get('storage') or 'local'
+    r = _px_write('POST', f'/nodes/{PROXMOX_NODE}/vzdump',
+                  {'vmid': vmid, 'storage': storage, 'mode': 'snapshot', 'compress': 'zstd',
+                   'notes-template': f'RRM-Backup {{{{guestname}}}}'})
+    _audit_user('pve_backup', f'ct{vmid}', f"{storage}: {'gestartet' if r['ok'] else r['error']}")
+    return jsonify(r if not r['ok'] else {'ok': True, 'msg': f'Backup von {vmid} nach {storage} gestartet', 'task': r['data']})
+
+@app.route('/api/pve/<int:vmid>/onboot', methods=['POST'])
+@admin_required
+def api_pve_onboot(vmid):
+    on = bool((request.get_json(silent=True) or {}).get('on'))
+    kind = 'qemu' if (request.get_json(silent=True) or {}).get('type') == 'qemu' else 'lxc'
+    r = _px_write('PUT', f'/nodes/{PROXMOX_NODE}/{kind}/{vmid}/config', {'onboot': 1 if on else 0})
+    _audit_user('pve_onboot', f'ct{vmid}', f"{'an' if on else 'aus'}: {'ok' if r['ok'] else r['error']}")
+    return jsonify(r)
+
+@app.route('/api/pve/<int:vmid>/info')
+@login_required
+def api_pve_info(vmid):
+    _ensure_node()
+    cfg = (_px(f'/nodes/{PROXMOX_NODE}/lxc/{vmid}/config') or {}).get('data') or {}
+    bk = (_px(f'/nodes/{PROXMOX_NODE}/tasks?typefilter=vzdump&vmid={vmid}&limit=5') or {}).get('data') or []
+    return jsonify({'onboot': bool(int(cfg.get('onboot', 0) or 0)),
+                    'backups': [{'start': t.get('starttime'), 'status': t.get('status')} for t in bk]})
 
 # ─── SSO (OpenID Connect: Authentik, Keycloak, Entra ID, Google, …) ───────
 OIDC_ISSUER        = os.environ.get('OIDC_ISSUER', '').rstrip('/')
