@@ -437,3 +437,13 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg-elev-2); b
 .btn.danger { border-color: rgba(255,93,108,.45); color: var(--crit); }
 .palette.confirm { padding: 20px 22px; }
 .confirm-title { font-weight: 650; font-size: 15px; margin-bottom: 6px; }
+
+/* ---- Fragezeile ---- */
+.askbar { background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 18px; display: flex; flex-direction: column; gap: 10px; }
+.askbar-row { display: flex; align-items: center; gap: 10px; }
+.askbar-ico { color: var(--accent); font-size: 16px; }
+.askbar-input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--text); font: inherit; font-size: 15px; outline: none; }
+.askbar-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.askbar-quick .chip { font-size: 12px; }
+.pill.stopped, .s-stopped { background: var(--bg-elev-2); color: var(--text-mute); }
+.dot-s.s-stopped { background: var(--text-mute); box-shadow: none; }

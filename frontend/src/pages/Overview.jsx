@@ -47,6 +47,7 @@ export default function Overview() {
 
   return (
     <>
+      <AskBar problems={(s.offline ?? 0) + (s.degraded ?? 0)} />
       <Setup hostCount={hosts.filter(h => h.key !== 'unifi' && h.key !== 'proxmox').length} />
 
       <div className="summary">
@@ -93,6 +94,32 @@ export default function Overview() {
         </section>
       ))}
     </>
+  )
+}
+
+function AskBar({ problems }) {
+  const go = useNavigate()
+  const [q, setQ] = useState('')
+  const [ki, setKi] = useState(null)
+  useEffect(() => { getJSON('/api/connect').then(c => setKi(!!c.integrations.litellm)).catch(() => setKi(false)) }, [])
+  const quick = [
+    problems ? 'Was ist gerade gestört und was soll ich tun?' : 'Ist alles in Ordnung? Fasse den Zustand kurz zusammen.',
+    'Welche Hosts sind am stärksten ausgelastet und warum?',
+    'Wo wird der Speicherplatz knapp?',
+  ]
+  const ask = text => text.trim() && go(`/analyze?q=${encodeURIComponent(text.trim())}`)
+  return (
+    <div className="askbar">
+      <form className="askbar-row" onSubmit={e => { e.preventDefault(); ask(q) }}>
+        <span className="askbar-ico">✦</span>
+        <input id="ask-q" className="askbar-input" placeholder="Frag die KI zu deiner Infrastruktur …" value={q}
+          onChange={e => setQ(e.target.value)} disabled={ki === false} />
+        <button className="btn" type="submit" disabled={!q.trim() || ki === false}>Fragen</button>
+      </form>
+      {ki === false
+        ? <div className="muted small">Die KI ist noch nicht eingerichtet: unter <Link to="/settings" style={{ color: 'var(--accent)' }}>Einstellungen › KI</Link> Adresse und API-Key eintragen.</div>
+        : <div className="askbar-quick">{quick.map(x => <button key={x} className="chip" onClick={() => ask(x)}>{x}</button>)}</div>}
+    </div>
   )
 }
 

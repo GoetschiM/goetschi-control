@@ -1291,6 +1291,8 @@ def _px(path):
 
 # ─── AUTO-DISCOVERY ───────────────────────────
 
+_lxc_ip_memory = {}   # vmid -> zuletzt bekannte IP (Proxmox liefert unter Last manchmal keine)
+
 def discover_lxc_ips():
     cached = cache.get('lxc_ips', ttl=DISCOVERY_TTL)
     if cached is not None:
@@ -1316,6 +1318,14 @@ def discover_lxc_ips():
                         if candidate and not candidate.startswith('127.'):
                             ip = candidate
                             break
+        if not ip and status == 'running':
+            ip = _lxc_ip_memory.get(vmid)
+            if not ip:
+                for a in _agents_list():
+                    if (a.get('hostname') or '').lower() == (name or '').lower():
+                        ip = a['ip']; break
+        if ip:
+            _lxc_ip_memory[vmid] = ip
         result[vmid] = {'ip': ip, 'name': name, 'status': status}
     cache.set('lxc_ips', result)
     return result
@@ -1529,6 +1539,11 @@ def docker_to_services(containers, ip, url_map):
             continue
         st_lower = ct.get('status', '').lower()
         is_up = st_lower.startswith('up') or 'running' in st_lower
+        # Bewusst gestoppte Container (Exited/Created) sind keine Stoerung; nur
+        # Neustart-Schleifen, "dead" und "unhealthy" zaehlen als Ausfall.
+        is_stopped = not is_up and (st_lower.startswith('exited') or st_lower.startswith('created'))
+        if 'unhealthy' in st_lower:
+            is_up = False
         ports_str  = ct.get('ports', '')
         host_ports = re.findall(r'(?:0\.0\.0\.0|::):(\d+)->', ports_str)
         display    = _clean_container_name(raw_name)
@@ -1546,6 +1561,10 @@ def docker_to_services(containers, ip, url_map):
             if display.lower() in seen_names:   # Replika bereits gelistet
                 continue
             seen_names.add(display.lower())
+            if is_stopped:
+                svcs.append({'name': display, 'port': 0, 'status': 'stopped', 'rtt': None, 'code': None,
+                             'url': None, 'desc': image_hint, 'dynamic': True})
+                continue
             total += 1
             if is_up: ok += 1
             svcs.append({'name': display, 'port': 0,
@@ -1559,6 +1578,10 @@ def docker_to_services(containers, ip, url_map):
                     continue
                 seen_ports.add(port)
                 svc_url = url_map.get(display) or f'http://{ip}:{port}'
+                if is_stopped:
+                    svcs.append({'name': display, 'port': port, 'status': 'stopped', 'rtt': None, 'code': None,
+                                 'url': svc_url, 'desc': image_hint, 'dynamic': True})
+                    continue
                 total += 1
                 if is_up: ok += 1
                 svcs.append({'name': display, 'port': port,
