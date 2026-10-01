@@ -1,63 +1,63 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ brand }} &mdash; Einrichtung</title>
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title>Einrichtung · {{ brand }}</title>
+  <link rel="stylesheet" href="/static/auth.css">
 </head>
-<body class="login-bg">
-    <div class="login-card">
+<body>
+  <main class="auth">
+    <header class="auth-head">
+      <div class="auth-brand">{{ brand }}</div>
+      <h1 class="auth-title">Willkommen</h1>
+      <p class="auth-sub">Lege das Administrator-Konto an. Danach verbindest du Hosts, Proxmox und weitere Dienste Schritt für Schritt.</p>
+    </header>
 
-        <div class="login-brand">
-            <div class="login-brand-logo">
-                <svg viewBox="0 0 40 40" width="52" height="52">
-                    <defs>
-                        <linearGradient id="gl-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%"   stop-color="#6366f1"/>
-                            <stop offset="100%" stop-color="#a855f7"/>
-                        </linearGradient>
-                    </defs>
-                    <rect x="2" y="2" width="36" height="36" rx="8"
-                          fill="none" stroke="url(#gl-grad)" stroke-width="2.5"/>
-                    <text x="20" y="26" text-anchor="middle"
-                          fill="url(#gl-grad)" font-size="18" font-weight="700"
-                          font-family="sans-serif">{{ brand[:2]|upper }}</text>
-                </svg>
-            </div>
-            <div class="login-brand-name">{{ brand }}</div>
-            <div class="login-brand-labs">Infrastructure Control</div>
-            <div class="login-brand-sub">Infrastruktur-Dashboard</div>
+    <form class="auth-form" action="/setup" method="POST" id="auth-form">
+      {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+      <div class="field">
+        <label for="username">Benutzername</label>
+        <input type="text" id="username" name="username" value="admin" required autofocus autocomplete="username"
+               autocapitalize="none" spellcheck="false" pattern="[a-z0-9._\-]{2,32}">
+      </div>
+      <div class="field">
+        <label for="password">Passwort <span style="color:var(--text-mute)">· mindestens 10 Zeichen</span></label>
+        <div class="input-wrap">
+          <input type="password" id="password" name="password" minlength="10" required autocomplete="new-password">
+          <button type="button" class="reveal" id="reveal" aria-controls="password" aria-pressed="false">Anzeigen</button>
         </div>
+      </div>
+      <div class="field">
+        <label for="password2">Passwort wiederholen</label>
+        <input type="password" id="password2" name="password2" minlength="10" required autocomplete="new-password">
+        <div class="hint" id="mismatch" hidden>Die Passwörter stimmen nicht überein.</div>
+      </div>
+      <button type="submit" class="btn" id="submit">Konto anlegen</button>
+    </form>
 
-        <form class="login-form" action="/setup" method="POST">
-            <div class="login-brand-sub" style="text-align:center;margin-bottom:8px">Ersteinrichtung: Administrator anlegen</div>
-            <div>
-                <label class="login-label" for="username">Benutzername</label>
-                <input class="login-input" type="text" id="username" name="username" value="admin" required autofocus autocomplete="username">
-            </div>
-            <div>
-                <label class="login-label" for="password">Passwort (mind. 10 Zeichen)</label>
-                <input class="login-input" type="password" id="password" name="password" minlength="10" required autocomplete="new-password">
-            </div>
-            <div>
-                <label class="login-label" for="password2">Passwort wiederholen</label>
-                <input class="login-input" type="password" id="password2" name="password2" minlength="10" required autocomplete="new-password">
-            </div>
-            {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
-            <button type="submit" class="login-btn">Administrator anlegen &#8594;</button>
-        </form>
+    <footer class="auth-foot">Diese Seite erscheint nur, solange noch kein Konto existiert.</footer>
+  </main>
 
-        
-
-    </div>
-
-    <script>
-        // Auto-redirect if already authenticated
-        fetch('/api/session-check')
-            .then(r => r.json())
-            .then(d => { if (d.authenticated) window.location.href = '/'; })
-            .catch(() => {});
-    </script>
+  <script>
+    (function () {
+      var pw = document.getElementById('password'), pw2 = document.getElementById('password2');
+      var rv = document.getElementById('reveal'), mm = document.getElementById('mismatch');
+      rv.addEventListener('click', function () {
+        var show = pw.type === 'password';
+        pw.type = pw2.type = show ? 'text' : 'password';
+        rv.textContent = show ? 'Verbergen' : 'Anzeigen';
+        rv.setAttribute('aria-pressed', show ? 'true' : 'false');
+      });
+      function check() { mm.hidden = !pw2.value || pw.value === pw2.value; }
+      pw.addEventListener('input', check); pw2.addEventListener('input', check);
+      var f = document.getElementById('auth-form'), b = document.getElementById('submit');
+      f.addEventListener('submit', function (e) {
+        if (pw.value !== pw2.value) { e.preventDefault(); mm.hidden = false; pw2.focus(); return; }
+        b.disabled = true; b.textContent = 'Einen Moment …';
+      });
+    })();
+  </script>
 </body>
 </html>

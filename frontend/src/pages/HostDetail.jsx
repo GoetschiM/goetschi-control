@@ -81,7 +81,7 @@ export default function HostDetail() {
       <div className="crumbs"><Link to="/">Übersicht</Link> / {host.name}</div>
       <div className="detail-head">
         <StatusDot status={host.status} />
-        <span className="title">{host.icon ? host.icon + ' ' : ''}{host.name}</span>
+        <span className="title">{host.name}</span>
         <Pill status={host.status} />
       </div>
       <div className="muted" style={{ marginBottom: 20, fontFamily: 'var(--mono)' }}>

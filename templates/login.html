@@ -1,87 +1,81 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ brand }} &mdash; Login</title>
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title>Anmelden · {{ brand }}</title>
+  <link rel="stylesheet" href="/static/auth.css">
 </head>
-<body class="login-bg">
-    <div class="login-card">
+<body>
+  <main class="auth">
+    <header class="auth-head">
+      <div class="auth-brand">{{ brand }}</div>
+      {% if mfa %}
+      <h1 class="auth-title">Bestätigung</h1>
+      <p class="auth-sub">Gib den 6-stelligen Code aus deiner Authenticator-App ein.</p>
+      {% else %}
+      <h1 class="auth-title">Anmelden</h1>
+      <p class="auth-sub">Überwachung und Steuerung deiner Infrastruktur.</p>
+      {% endif %}
+    </header>
 
-        <div class="login-brand">
-            <div class="login-brand-logo">
-                <svg viewBox="0 0 40 40" width="52" height="52">
-                    <defs>
-                        <linearGradient id="gl-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%"   stop-color="#6366f1"/>
-                            <stop offset="100%" stop-color="#a855f7"/>
-                        </linearGradient>
-                    </defs>
-                    <rect x="2" y="2" width="36" height="36" rx="8"
-                          fill="none" stroke="url(#gl-grad)" stroke-width="2.5"/>
-                    <text x="20" y="26" text-anchor="middle"
-                          fill="url(#gl-grad)" font-size="18" font-weight="700"
-                          font-family="sans-serif">{{ brand[:2]|upper }}</text>
-                </svg>
-            </div>
-            <div class="login-brand-name">{{ brand }}</div>
-            <div class="login-brand-labs">Infrastructure Control</div>
-            <div class="login-brand-sub">Infrastruktur-Dashboard</div>
+    <form class="auth-form" action="/login" method="POST" id="auth-form">
+      {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+
+      {% if mfa %}
+      <div class="field">
+        <label for="mfa_code">Code</label>
+        <input type="text" id="mfa_code" name="mfa_code" required autofocus autocomplete="one-time-code"
+               inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456">
+      </div>
+      <button type="submit" class="btn">Bestätigen</button>
+      {% else %}
+        {% if sso %}
+        <a class="btn {% if not sso_only %}secondary{% endif %}" href="/auth/oidc/login">Mit {{ sso_name }} anmelden</a>
+        {% if not sso_only %}<div class="divider">oder</div>{% endif %}
+        {% endif %}
+        {% if not sso_only %}
+        <div class="field">
+          <label for="username">Benutzername</label>
+          <input type="text" id="username" name="username" required {% if not username %}autofocus{% endif %} autocomplete="username"
+                 autocapitalize="none" spellcheck="false" value="{{ username or '' }}">
         </div>
+        <div class="field">
+          <label for="password">Passwort</label>
+          <div class="input-wrap">
+            <input type="password" id="password" name="password" required {% if username %}autofocus{% endif %} autocomplete="current-password">
+            <button type="button" class="reveal" id="reveal" aria-controls="password" aria-pressed="false">Anzeigen</button>
+          </div>
+          <div class="hint" id="caps" hidden>Feststelltaste ist aktiv.</div>
+        </div>
+        <button type="submit" class="btn" id="submit">Anmelden</button>
+        {% endif %}
+      {% endif %}
+    </form>
 
-        <form class="login-form" action="/login" method="POST">
-            {% if mfa %}
-            <div>
-                <label class="login-label" for="mfa_code">2FA-Code</label>
-                <input class="login-input" type="text" id="mfa_code" name="mfa_code"
-                       placeholder="6-stelliger Code" required autofocus autocomplete="one-time-code"
-                       inputmode="numeric" pattern="[0-9]*" maxlength="6">
-            </div>
+    <footer class="auth-foot">Kein Zugang? Ein Administrator kann dich unter Einstellungen anlegen.</footer>
+  </main>
 
-            {% if error %}
-            <div class="login-error">{{ error }}</div>
-            {% endif %}
-
-            <button type="submit" class="login-btn">Bestätigen &#8594;</button>
-            {% else %}
-            {% if sso %}
-            <a class="login-btn" href="/auth/oidc/login" style="display:block;text-align:center;text-decoration:none">Mit {{ sso_name }} anmelden &#8594;</a>
-            {% if not sso_only %}<div style="text-align:center;font-size:12px;opacity:.5;margin:4px 0">oder mit Passwort</div>{% endif %}
-            {% endif %}
-            {% if not sso_only %}
-            <div>
-                <label class="login-label" for="username">Benutzername</label>
-                <input class="login-input" type="text" id="username" name="username"
-                       placeholder="Benutzername" required autofocus autocomplete="username">
-            </div>
-
-            <div>
-                <label class="login-label" for="password">Passwort</label>
-                <input class="login-input" type="password" id="password" name="password"
-                       placeholder="Passwort" required autocomplete="current-password">
-            </div>
-
-            {% if error %}
-            <div class="login-error">{{ error }}</div>
-            {% endif %}
-
-            <button type="submit" class="login-btn">Anmelden &#8594;</button>
-            {% endif %}
-            {% if sso_only and error %}<div class="login-error">{{ error }}</div>{% endif %}
-            {% endif %}
-        </form>
-
-        
-
-    </div>
-
-    <script>
-        // Auto-redirect if already authenticated
-        fetch('/api/session-check')
-            .then(r => r.json())
-            .then(d => { if (d.authenticated) window.location.href = '/'; })
-            .catch(() => {});
-    </script>
+  <script>
+    (function () {
+      var pw = document.getElementById('password'), rv = document.getElementById('reveal');
+      if (pw && rv) {
+        rv.addEventListener('click', function () {
+          var show = pw.type === 'password';
+          pw.type = show ? 'text' : 'password';
+          rv.textContent = show ? 'Verbergen' : 'Anzeigen';
+          rv.setAttribute('aria-pressed', show ? 'true' : 'false');
+          pw.focus();
+        });
+        var caps = document.getElementById('caps');
+        pw.addEventListener('keyup', function (e) {
+          if (e.getModifierState) caps.hidden = !e.getModifierState('CapsLock');
+        });
+      }
+      var f = document.getElementById('auth-form'), b = f && f.querySelector('button[type=submit]');
+      if (f && b) f.addEventListener('submit', function () { b.disabled = true; b.textContent = 'Einen Moment …'; });
+    })();
+  </script>
 </body>
 </html>

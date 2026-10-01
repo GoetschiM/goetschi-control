@@ -2219,7 +2219,7 @@ def login_page():
         _login_fail_register(ip)
         _audit(u or '?', 'login_fail', '', f'falsche Zugangsdaten · {request.remote_addr or ""}')
         error = 'Ungültige Zugangsdaten'
-    return render_template('login.html', error=error)
+    return render_template('login.html', error=error, username=(request.form.get('username', '') if request.method == 'POST' else '')[:64])
 
 @app.route('/logout')
 def logout():
