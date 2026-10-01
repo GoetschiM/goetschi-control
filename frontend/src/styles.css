@@ -471,3 +471,15 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg-elev-2); b
 .chat-input textarea { flex: 1; min-width: 0; resize: vertical; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 @media (max-width: 820px) { .chat-layout { grid-template-columns: 1fr; } .chat-side { order: 2; } .msg { max-width: 100%; } }
+
+/* ---- KI-Ueberwachung ---- */
+.mon-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.mon-row:last-child { border-bottom: 0; }
+.mon-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; cursor: pointer; flex-wrap: wrap; }
+.mon-detail { flex-basis: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 6px; }
+.mon-form { display: flex; flex-direction: column; gap: 10px; }
+.run-row { border-bottom: 1px solid var(--line); padding: 8px 0; }
+.run-row:last-child { border-bottom: 0; }
+.run-row summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; flex-wrap: wrap; }
+.run-row summary::-webkit-details-marker { display: none; }
+.warn-box { border-color: rgba(247,185,85,.5); background: linear-gradient(180deg, rgba(247,185,85,.08), transparent), var(--bg-elev); }

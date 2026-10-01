@@ -3905,6 +3905,8 @@ CONFIG_FIELDS = [
     ]),
     ('KI', [
         ('AI_PROVIDER', 'Anbieter: agy (Antigravity) oder litellm', False, 'agy'),
+        ('AI_AUTONOMY', 'Selbstständigkeit: off | report | full (full = handelt selbst mit Root)', False, 'report'),
+        ('AI_ALERTS', 'Auf neue Alarme reagieren: 1 = ja, 0 = nein', False, '1'),
         ('LITELLM_URL', 'LiteLLM-Adresse (nur bei litellm)', False, 'http://10.0.0.20:4000'),
         ('LITELLM_KEY', 'API-Key', True, ''),
         ('LLM_MODEL', 'Modell (leer = erstes verfügbares)', False, ''),
@@ -4213,6 +4215,212 @@ def api_ai_conversations():
     conn.close()
     return jsonify([{'id': r[0], 'last': r[1], 'title': (r[2] or '')[:90]} for r in rows])
 
+# ─── KI-UEBERWACHUNG: Pruefungen, Alarm-Reaktion, Selbststaendigkeit ─────
+# AI_AUTONOMY: off | report | full
+#   report = Antigravity untersucht und meldet, aendert nichts (nur lesende Werkzeuge)
+#   full   = Antigravity darf bei Pruefungen und Alarmen selbst handeln (Root). Jede Aktion
+#            wird protokolliert und per Telegram gemeldet.
+def ai_autonomy():
+    v = os.environ.get('AI_AUTONOMY', 'report').strip().lower()
+    return v if v in ('off', 'report', 'full') else 'report'
+
+def _mon_db():
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('''CREATE TABLE IF NOT EXISTS ai_monitors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, prompt TEXT, interval_min INTEGER,
+        enabled INTEGER DEFAULT 1, created_by TEXT, created INTEGER,
+        last_run INTEGER, last_status TEXT, last_result TEXT, conversation TEXT)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS ai_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref TEXT, ts INTEGER, status TEXT,
+        mode TEXT, result TEXT, conversation TEXT)''')
+    conn.commit()
+    return conn
+
+def _ai_run_log(kind, ref, status, mode, result, conv):
+    conn = _mon_db()
+    conn.execute('INSERT INTO ai_runs (kind,ref,ts,status,mode,result,conversation) VALUES (?,?,?,?,?,?,?)',
+                 (kind, ref, int(time.time()), status, mode, (result or '')[:6000], conv))
+    conn.execute('DELETE FROM ai_runs WHERE id NOT IN (SELECT id FROM ai_runs ORDER BY id DESC LIMIT 500)')
+    conn.commit(); conn.close()
+
+def _auto_prompt(title, task, full):
+    rules = ('Du darfst selbst handeln (volle Rechte). Bevorzuge die rrm-admin-Werkzeuge. Nichts loeschen '
+             'ausser es ist eindeutig noetig und rueckgaengig machbar. Berichte genau, was du geaendert hast '
+             'und wie man es rueckgaengig macht.') if full else \
+            'Du darfst nur lesen (rrm-Werkzeuge). Aendere nichts, sondern schlage einen konkreten Plan vor.'
+    return (f'Automatische Aufgabe "{title}". Halte dich an RRM.md. {rules}\n'
+            f'Aufgabe: {task}\n'
+            'Erste Zeile deiner Antwort exakt: STATUS: OK oder STATUS: PROBLEM oder STATUS: BEHOBEN. '
+            'Danach kurz Befund, Ursache und (falls noetig) Massnahme.')
+
+def _parse_status(text, ok):
+    if not ok:
+        return 'error'
+    t = (text or '').upper()
+    for k, v in (('STATUS: BEHOBEN', 'fixed'), ('STATUS: PROBLEM', 'problem'), ('STATUS: OK', 'ok')):
+        if k in t:
+            return v
+    return 'ok'
+
+def _notify(title, status, text):
+    icon = {'problem': '⚠️', 'fixed': '🛠️', 'error': '❌'}.get(status)
+    if icon:
+        try:
+            _tg_send(f'{icon} *{BRAND} · {title}*\n{(text or "")[:1200]}')
+        except Exception:
+            pass
+
+def run_monitor(mid, manual=False):
+    conn = _mon_db()
+    row = conn.execute('SELECT name,prompt,last_status FROM ai_monitors WHERE id=?', (mid,)).fetchone()
+    conn.close()
+    if not row or not agy_available() or (ai_autonomy() == 'off' and not manual):
+        return None
+    full = ai_autonomy() == 'full'
+    try:
+        r = _agy_run(_auto_prompt(row[0], row[1], full), execute=full)
+    except Exception as e:
+        r = {'ok': False, 'error': str(e)}
+    text = r.get('answer') or f"Fehler: {r.get('error')}"
+    st = _parse_status(text, r.get('ok'))
+    conn = _mon_db()
+    conn.execute('UPDATE ai_monitors SET last_run=?, last_status=?, last_result=?, conversation=? WHERE id=?',
+                 (int(time.time()), st, text[:6000], r.get('conversation_id'), mid))
+    conn.commit(); conn.close()
+    _ai_run_log('monitor', row[0], st, 'full' if full else 'report', text, r.get('conversation_id'))
+    if st != row[2] or st == 'fixed':
+        _notify(row[0], st, text)
+    if full:
+        _audit('ki', 'monitor_run', '', f'{row[0]}: {st}')
+    return st
+
+_alert_seen = {}   # Signatur -> letzter Lauf
+
+def _react_to_alerts():
+    # Neue Alarme: einmal pro Signatur und 6 Stunden, hoechstens 4 Laeufe pro Stunde.
+    if ai_autonomy() == 'off' or not agy_available() or os.environ.get('AI_ALERTS', '1') == '0':
+        return
+    alerts = (cache.get('live') or {}).get('alerts') or []
+    now = time.time()
+    recent = sum(1 for t in _alert_seen.values() if now - t < 3600)
+    for a in alerts:
+        sig = f"{a.get('key')}|{a.get('msg')}"
+        if now - _alert_seen.get(sig, 0) < 6 * 3600 or recent >= 4:
+            continue
+        _alert_seen[sig] = now; recent += 1
+        full = ai_autonomy() == 'full'
+        task = (f"Neuer Alarm ({a.get('severity')}): {a.get('host')} ({a.get('ip')}) – {a.get('msg')}. "
+                'Finde die Ursache (Status, Logs, Docker).' + (' Behebe sie, wenn das sicher moeglich ist.' if full else ''))
+        try:
+            r = _agy_run(_auto_prompt(f"Alarm {a.get('host')}", task, full), execute=full)
+        except Exception as e:
+            r = {'ok': False, 'error': str(e)}
+        text = r.get('answer') or f"Fehler: {r.get('error')}"
+        st = _parse_status(text, r.get('ok'))
+        _ai_run_log('alert', f"{a.get('host')}: {a.get('msg')}", st, 'full' if full else 'report', text, r.get('conversation_id'))
+        _notify(f"Alarm {a.get('host')}", 'problem' if st == 'ok' else st, text)
+        if full:
+            _audit('ki', 'alert_reaction', a.get('key') or '', f"{a.get('msg')}: {st}")
+
+def _ai_bg():
+    time.sleep(120)
+    while True:
+        try:
+            if agy_available() and ai_autonomy() != 'off':
+                conn = _mon_db()
+                due = conn.execute('SELECT id FROM ai_monitors WHERE enabled=1 AND '
+                                   '(last_run IS NULL OR last_run + interval_min*60 <= ?)', (int(time.time()),)).fetchall()
+                conn.close()
+                for (mid,) in due:
+                    run_monitor(mid)
+                _react_to_alerts()
+        except Exception as e:
+            print(f'[ki] {e}')
+        time.sleep(60)
+
+def monitor_create(name, prompt, interval_min, user):
+    name = (name or '').strip()[:80]; prompt = (prompt or '').strip()[:2000]
+    if not name or not prompt:
+        raise ValueError('Name und Aufgabe sind nötig')
+    interval_min = max(5, min(int(interval_min or 60), 10080))
+    conn = _mon_db()
+    cur = conn.execute('INSERT INTO ai_monitors (name,prompt,interval_min,created_by,created) VALUES (?,?,?,?,?)',
+                       (name, prompt, interval_min, user, int(time.time())))
+    conn.commit(); mid = cur.lastrowid; conn.close()
+    _audit(user, 'monitor_create', '', f'{name} alle {interval_min} min')
+    return mid
+
+def monitors_list():
+    conn = _mon_db()
+    rows = conn.execute('SELECT id,name,prompt,interval_min,enabled,created_by,created,last_run,last_status,last_result '
+                        'FROM ai_monitors ORDER BY id').fetchall()
+    conn.close()
+    return [{'id': r[0], 'name': r[1], 'prompt': r[2], 'interval_min': r[3], 'enabled': bool(r[4]),
+             'created_by': r[5], 'created': r[6], 'last_run': r[7], 'last_status': r[8], 'last_result': r[9]} for r in rows]
+
+def _system_crons():
+    # Geplante Aufgaben dieses Servers ausserhalb des RRM (crontab, cron.d, systemd-Timer) – nur Anzeige.
+    out = {}
+    try:
+        out['crontab_root'] = subprocess.run(['crontab', '-l'], capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        out['crontab_root'] = ''
+    try:
+        out['cron_d'] = {f: open(os.path.join('/etc/cron.d', f)).read()[:2000]
+                         for f in sorted(os.listdir('/etc/cron.d')) if not f.startswith('.')}
+    except Exception:
+        out['cron_d'] = {}
+    try:
+        out['timers'] = subprocess.run(['systemctl', 'list-timers', '--all', '--no-pager', '--no-legend'],
+                                       capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        out['timers'] = ''
+    return out
+
+@app.route('/api/monitors', methods=['GET', 'POST'])
+@login_required
+def api_monitors():
+    if request.method == 'GET':
+        conn = _mon_db()
+        runs = conn.execute('SELECT kind,ref,ts,status,mode,result FROM ai_runs ORDER BY id DESC LIMIT 40').fetchall()
+        conn.close()
+        return jsonify({'monitors': monitors_list(), 'autonomy': ai_autonomy(), 'agy': agy_available(),
+                        'telegram': bool(TELEGRAM_TOKEN and TELEGRAM_CHAT_ID),
+                        'runs': [{'kind': r[0], 'ref': r[1], 'ts': r[2], 'status': r[3], 'mode': r[4], 'result': r[5]} for r in runs],
+                        'system': _system_crons()})
+    if session.get('role', 'admin') != 'admin':
+        return jsonify({'ok': False, 'error': 'Nur Admins'}), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        mid = monitor_create(d.get('name'), d.get('prompt'), d.get('interval_min'), session.get('username', '?'))
+    except ValueError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+    return jsonify({'ok': True, 'id': mid})
+
+@app.route('/api/monitors/<int:mid>', methods=['PATCH', 'DELETE'])
+@admin_required
+def api_monitor_edit(mid):
+    conn = _mon_db()
+    if request.method == 'DELETE':
+        conn.execute('DELETE FROM ai_monitors WHERE id=?', (mid,))
+        _audit_user('monitor_delete', '', str(mid))
+    else:
+        d = request.get_json(silent=True) or {}
+        if 'enabled' in d:
+            conn.execute('UPDATE ai_monitors SET enabled=? WHERE id=?', (1 if d['enabled'] else 0, mid))
+        if 'interval_min' in d:
+            conn.execute('UPDATE ai_monitors SET interval_min=? WHERE id=?', (max(5, int(d['interval_min'])), mid))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/api/monitors/<int:mid>/run', methods=['POST'])
+@admin_required
+def api_monitor_run(mid):
+    if _agy_lock.locked():
+        return jsonify({'ok': False, 'error': 'Antigravity ist gerade beschäftigt'}), 409
+    threading.Thread(target=run_monitor, args=(mid, True), daemon=True).start()
+    return jsonify({'ok': True})
+
 # ─── SSO (OpenID Connect: Authentik, Keycloak, Entra ID, Google, …) ───────
 OIDC_ISSUER        = os.environ.get('OIDC_ISSUER', '').rstrip('/')
 OIDC_CLIENT_ID     = os.environ.get('OIDC_CLIENT_ID', '')
@@ -4415,6 +4623,13 @@ _MCP_TOOLS = {
     'find_package':    ('Sucht ein installiertes Paket ueber alle inventarisierten Hosts.',
                         {'query': {'type': 'string', 'description': 'Paketname (Teilstring)'}},
                         lambda a: _mcp_inventory_search(a.get('query'))),
+    'list_monitors':   ('Alle wiederkehrenden KI-Pruefungen mit letztem Ergebnis.', {}, lambda a: monitors_list()),
+    'create_monitor':  ('Neue wiederkehrende KI-Pruefung anlegen (sichtbar im RRM unter KI-Ueberwachung). '
+                        'Statt eigener Cron-Jobs IMMER dieses Werkzeug verwenden.',
+                        {'name': {'type': 'string', 'description': 'kurzer Name'},
+                         'prompt': {'type': 'string', 'description': 'Was geprueft werden soll'},
+                         'interval_min': {'type': 'integer', 'description': 'Intervall in Minuten (min. 5)'}},
+                        lambda a: {'ok': True, 'id': monitor_create(a.get('name'), a.get('prompt'), a.get('interval_min'), 'ki')}),
 }
 
 def _mcp_admin_docker(a):
@@ -4511,7 +4726,7 @@ def _mcp_serve(tools, server_name):
     if method == 'tools/list':
         return ok({'tools': [{'name': n, 'description': d,
                               'inputSchema': {'type': 'object', 'properties': props,
-                                              'required': [k for k in props if k in ('host', 'name', 'action', 'vmid', 'query')]}}
+                                              'required': [k for k in props if k in ('host', 'name', 'action', 'vmid', 'query', 'prompt')]}}
                              for n, (d, props, _) in tools.items()]})
     if method == 'tools/call':
         tool = tools.get(params.get('name'))
@@ -4536,6 +4751,7 @@ if __name__ == '__main__':
     threading.Thread(target=_nanoclaw_bg, daemon=True).start()
     threading.Thread(target=_metrics_bg, daemon=True).start()
     threading.Thread(target=_automations_bg, daemon=True).start()
+    threading.Thread(target=_ai_bg, daemon=True).start()
     try:
         _users_ensure()
     except Exception as e:

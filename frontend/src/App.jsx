@@ -21,11 +21,13 @@ import Metrics from './pages/Metrics.jsx'
 import Integrations from './pages/Integrations.jsx'
 import Connect from './pages/Connect.jsx'
 import Palette from './Palette.jsx'
+import Monitors from './pages/Monitors.jsx'
 
 const NAV = [
   { section: 'Überwachen', items: [
     { to: '/', ico: '▦', label: 'Übersicht', end: true },
     { to: '/analyze', ico: '✦', label: 'KI-Assistent' },
+    { to: '/monitors', ico: '◉', label: 'KI-Überwachung' },
     { to: '/alerts', ico: '◬', label: 'Alarme', badge: 'alerts' },
     { to: '/board', ico: '◰', label: 'Dienste' },
     { to: '/topology', ico: '⤳', label: 'Topologie' },
@@ -134,6 +136,7 @@ export default function App() {
             <Route path="/events" element={<Events />} />
             <Route path="/maintenance" element={<Maintenance />} />
             <Route path="/connect" element={<Connect />} />
+            <Route path="/monitors" element={<Monitors />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/settings" element={<Settings />} />
@@ -148,6 +151,7 @@ export default function App() {
 function titleFor(path) {
   if (path.endsWith('/terminal')) return 'Terminal'
   if (path.startsWith('/connect')) return 'Hosts & Agenten'
+  if (path.startsWith('/monitors')) return 'KI-Überwachung'
   if (path.startsWith('/board')) return 'Dienste'
   if (path.includes('/c/')) return 'Container'
   if (path.startsWith('/host/')) return 'Service'
