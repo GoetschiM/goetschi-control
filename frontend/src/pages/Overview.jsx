@@ -107,14 +107,18 @@ function AskBar({ problems }) {
     'Welche Hosts sind am stärksten ausgelastet und warum?',
     'Wo wird der Speicherplatz knapp?',
   ]
-  const ask = text => text.trim() && go(`/analyze?q=${encodeURIComponent(text.trim())}`)
+  const ask = text => {
+    if (!text.trim()) return
+    if (ki === false) { go('/settings#integrationen'); return }
+    go(`/analyze?q=${encodeURIComponent(text.trim())}`)
+  }
   return (
     <div className="askbar">
       <form className="askbar-row" onSubmit={e => { e.preventDefault(); ask(q) }}>
         <span className="askbar-ico">✦</span>
         <input id="ask-q" className="askbar-input" placeholder="Frag die KI zu deiner Infrastruktur …" value={q}
-          onChange={e => setQ(e.target.value)} disabled={ki === false} />
-        <button className="btn" type="submit" disabled={!q.trim() || ki === false}>Fragen</button>
+          onChange={e => setQ(e.target.value)} />
+        <button className="btn" type="submit" disabled={!q.trim()}>{ki === false ? 'KI einrichten' : 'Fragen'}</button>
       </form>
       {ki === false
         ? <div className="muted small">Die KI ist noch nicht eingerichtet: unter <Link to="/settings" style={{ color: 'var(--accent)' }}>Einstellungen › KI</Link> Adresse und API-Key eintragen.</div>
