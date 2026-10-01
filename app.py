@@ -22,6 +22,21 @@ import paramiko as _paramiko
 import datetime as _dt
 import secrets as _sec
 
+# In der Oberflaeche gesetzte Einstellungen (Datei im Datenverzeichnis) haben Vorrang vor der Umgebung.
+CONFIG_FILE = os.path.join(os.path.dirname(os.environ.get('AUDIT_DB', '/data/audit.db')) or '.', 'config.env')
+def _read_config_file():
+    vals = {}
+    try:
+        for line in open(CONFIG_FILE, encoding='utf-8'):
+            line = line.rstrip('\n')
+            if line and not line.startswith('#') and '=' in line:
+                k, v = line.split('=', 1)
+                vals[k.strip()] = v
+    except FileNotFoundError:
+        pass
+    return vals
+os.environ.update(_read_config_file())
+
 _ssl_ctx = ssl.create_default_context()
 _ssl_ctx.check_hostname = False
 _ssl_ctx.verify_mode = ssl.CERT_NONE
@@ -3797,6 +3812,115 @@ def api_scan():
         found = [x for x in pool.map(probe, ips) if x]
     _audit_user('network_scan', '', f'{cidr}: {len(found)} Hosts')
     return jsonify({'ok': True, 'cidr': str(net), 'hosts': found})
+
+# ─── EINSTELLUNGEN AUS DER OBERFLAECHE ───────────────────────────────────
+CONFIG_FIELDS = [
+    ('Allgemein', [
+        ('BRAND_NAME', 'Anzeigename', False, 'z.B. Goetschi Control'),
+        ('DASHBOARD_URL', 'Adresse des Dashboards', False, 'http://10.0.0.5:8181'),
+    ]),
+    ('Telegram-Alarme', [
+        ('TELEGRAM_TOKEN', 'Bot-Token', True, 'von @BotFather'),
+        ('TELEGRAM_CHAT_ID', 'Chat-ID', False, 'z.B. 123456789'),
+    ]),
+    ('Proxmox', [
+        ('PROXMOX_HOST', 'Host', False, '10.0.0.10'),
+        ('PROXMOX_TOKEN', 'API-Token', True, 'user@pve!name=secret'),
+        ('PROXMOX_NODE', 'Node (leer = automatisch)', False, ''),
+    ]),
+    ('UniFi', [
+        ('UNIFI_URL', 'Adresse', False, 'https://10.0.0.1'),
+        ('UNIFI_USER', 'Benutzer', False, ''),
+        ('UNIFI_PASS', 'Passwort', True, ''),
+    ]),
+    ('KI (LiteLLM / OpenAI-kompatibel)', [
+        ('LITELLM_URL', 'Adresse', False, 'http://10.0.0.20:4000'),
+        ('LITELLM_KEY', 'API-Key', True, ''),
+        ('LLM_MODEL', 'Modell (leer = erstes verfügbares)', False, ''),
+    ]),
+    ('Logs & Metriken', [
+        ('LOKI_URL', 'Loki', False, 'http://127.0.0.1:3100'),
+        ('PROMETHEUS_URL', 'Prometheus', False, ''),
+        ('GRAFANA_URL', 'Grafana', False, ''),
+    ]),
+    ('Deployment', [
+        ('DOKPLOY_URL', 'Dokploy-Adresse', False, ''),
+        ('DOKPLOY_API_KEY', 'Dokploy-API-Key', True, ''),
+        ('COOLIFY_URL', 'Coolify-Adresse', False, ''),
+        ('COOLIFY_API_KEY', 'Coolify-API-Key', True, ''),
+    ]),
+    ('Single Sign-on (OIDC)', [
+        ('OIDC_ISSUER', 'Issuer-URL', False, 'https://auth.example.com/application/o/rrm'),
+        ('OIDC_CLIENT_ID', 'Client-ID', False, ''),
+        ('OIDC_CLIENT_SECRET', 'Client-Secret', True, ''),
+        ('OIDC_NAME', 'Button-Text', False, 'Authentik'),
+        ('OIDC_ADMIN_GROUP', 'Admin-Gruppe', False, 'rrm-admins'),
+    ]),
+]
+_CONFIG_KEYS = {k: secret for _, fs in CONFIG_FIELDS for k, _, secret, _ in fs}
+
+@app.route('/api/config', methods=['GET', 'POST'])
+@admin_required
+def api_config():
+    overrides = _read_config_file()
+    if request.method == 'GET':
+        groups = []
+        for g, fs in CONFIG_FIELDS:
+            items = []
+            for k, label, secret, hint in fs:
+                v = overrides[k] if k in overrides else os.environ.get(k, '')
+                items.append({'key': k, 'label': label, 'secret': secret, 'hint': hint, 'set': bool(v),
+                              'value': '' if secret else v, 'source': 'ui' if k in overrides else ('env' if v else '')})
+            groups.append({'name': g, 'fields': items})
+        return jsonify({'groups': groups, 'restart_pending': _config_dirty['v']})
+    d = (request.get_json(silent=True) or {}).get('values') or {}
+    changed = []
+    for k, v in d.items():
+        if k not in _CONFIG_KEYS:
+            return jsonify({'ok': False, 'error': f'Unbekannte Einstellung: {k}'}), 400
+        v = str(v).replace('\n', '').replace('\r', '').strip()
+        if _CONFIG_KEYS[k] and v == '':
+            continue            # leeres Geheimnis-Feld = unveraendert lassen
+        overrides[k] = v
+        changed.append(k)
+    if changed:
+        tmp = CONFIG_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            f.write('# Von der Oberflaeche verwaltet. Vorrang vor der Umgebung.\n')
+            for k, v in overrides.items():
+                f.write(f'{k}={v}\n')
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, CONFIG_FILE)
+        _config_dirty['v'] = True
+        _audit_user('config_change', '', ', '.join(changed))
+    return jsonify({'ok': True, 'changed': changed, 'restart_pending': _config_dirty['v']})
+
+_config_dirty = {'v': False}
+
+@app.route('/api/config/clear', methods=['POST'])
+@admin_required
+def api_config_clear():
+    k = (request.get_json(silent=True) or {}).get('key')
+    if k not in _CONFIG_KEYS:
+        return jsonify({'ok': False, 'error': 'Unbekannte Einstellung'}), 400
+    overrides = _read_config_file()
+    overrides[k] = ''
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        f.write('# Von der Oberflaeche verwaltet. Vorrang vor der Umgebung.\n')
+        for kk, v in overrides.items():
+            f.write(f'{kk}={v}\n')
+    os.chmod(CONFIG_FILE, 0o600)
+    _config_dirty['v'] = True
+    _audit_user('config_change', '', f'{k} geleert')
+    return jsonify({'ok': True})
+
+@app.route('/api/app/restart', methods=['POST'])
+@admin_required
+def api_app_restart():
+    """Beendet den Prozess; systemd bzw. Docker starten ihn mit der neuen Konfiguration neu."""
+    _audit_user('app_restart', '', 'Neustart fuer neue Einstellungen')
+    threading.Timer(1.0, lambda: os._exit(0)).start()
+    return jsonify({'ok': True})
 
 # ─── SSO (OpenID Connect: Authentik, Keycloak, Entra ID, Google, …) ───────
 OIDC_ISSUER        = os.environ.get('OIDC_ISSUER', '').rstrip('/')

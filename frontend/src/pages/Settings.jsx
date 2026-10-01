@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import ConfigForm from './ConfigForm.jsx'
 import { getJSON, postJSON, patchJSON, delJSON } from '../api.js'
 
 const CATEGORIES = ['infra', 'core', 'agent', 'ai', 'voice', 'trading', 'app', 'sonstige']
@@ -96,6 +97,11 @@ export default function Settings() {
   return (
     <>
       {msg && <div className="toast">{msg}</div>}
+
+      {me?.role !== 'viewer' && (<>
+        <div className="group-title" id="integrationen">Integrationen einrichten</div>
+        <ConfigForm onFlash={flash} />
+      </>)}
 
       <div className="group-title">Zwei-Faktor (2FA){me ? ` — ${me.username}` : ''}</div>
       <div className="panel" style={{ marginBottom: 22 }}>

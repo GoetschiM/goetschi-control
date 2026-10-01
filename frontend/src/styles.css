@@ -409,3 +409,14 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg-elev-2); b
 .int-state.ok { color: var(--ok); }
 .int-state.error { color: var(--crit); }
 .int-state.off { color: var(--text-mute); font-weight: 500; }
+.cfg-groups { display: flex; flex-direction: column; gap: 8px; margin-bottom: 22px; }
+.cfg-group { background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius); }
+.cfg-group.open { border-color: var(--accent-dim); }
+.cfg-head { display: flex; align-items: center; gap: 12px; width: 100%; background: none; border: 0; color: var(--text); font: inherit; padding: 13px 16px; cursor: pointer; text-align: left; }
+.cfg-head .muted { font-size: 12.5px; }
+.cfg-chev { margin-left: auto; color: var(--text-mute); font-size: 18px; }
+.cfg-body { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+.cfg-field { display: grid; grid-template-columns: minmax(180px, 280px) 1fr; gap: 12px; align-items: center; font-size: 13px; }
+.cfg-input { display: flex; gap: 8px; min-width: 0; }
+.cfg-input .inp { flex: 1; min-width: 0; }
+@media (max-width: 700px) { .cfg-field { grid-template-columns: 1fr; gap: 4px; } }

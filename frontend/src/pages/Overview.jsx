@@ -103,8 +103,8 @@ function Setup({ hostCount }) {
   if (!c || hidden) return null
   const steps = [
     { done: hostCount > 0, label: 'Ersten Host erfassen', hint: 'Agent installieren, Netzwerk scannen oder Host von Hand anlegen', to: '/connect' },
-    { done: c.integrations.proxmox, label: 'Proxmox verbinden', hint: 'Container werden dann automatisch erkannt', to: '/connect#integrations' },
-    { done: c.integrations.telegram, label: 'Alarme einrichten', hint: 'Benachrichtigung aufs Handy per Telegram', to: '/connect#integrations' },
+    { done: c.integrations.proxmox, label: 'Proxmox verbinden', hint: 'Container werden dann automatisch erkannt', to: '/settings#integrationen' },
+    { done: c.integrations.telegram, label: 'Alarme einrichten', hint: 'Benachrichtigung aufs Handy per Telegram', to: '/settings#integrationen' },
     { done: c.agents > 0, label: 'Agent auf einem Host installieren', hint: 'liefert Docker-Container, Pakete und Details', to: '/connect' },
   ]
   const open = steps.filter(s => !s.done).length
