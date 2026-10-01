@@ -4305,7 +4305,8 @@ def _react_to_alerts():
     now = time.time()
     recent = sum(1 for t in _alert_seen.values() if now - t < 3600)
     for a in alerts:
-        sig = f"{a.get('key')}|{a.get('msg')}"
+        # Zahlen im Text ignorieren ("Disk voll in ~6.0d" vs "~6.1d" ist derselbe Alarm)
+        sig = f"{a.get('key')}|{re.sub(r'[0-9.,~%]+', '#', a.get('msg') or '')}"
         if now - _alert_seen.get(sig, 0) < 6 * 3600 or recent >= 4:
             continue
         _alert_seen[sig] = now; recent += 1
