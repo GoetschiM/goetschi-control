@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main, pve01-mcp]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Backend installieren und prüfen
+        run: |
+          pip install -r requirements.txt
+          python -m py_compile app.py agent/gl-agent.py
+          bash -n deploy/install.sh deploy/update.sh
+
+      - name: Startet leer (Rauchtest)
+        run: |
+          mkdir -p /tmp/rrm && AUDIT_DB=/tmp/rrm/audit.db PORT=18181 python app.py &
+          for i in $(seq 1 30); do sleep 1; curl -fs -o /dev/null http://127.0.0.1:18181/setup && break; done
+          curl -fs -o /dev/null -w "setup %{http_code}\n" http://127.0.0.1:18181/setup
+          curl -fs http://127.0.0.1:18181/agent/install.sh | head -1 | grep -q '^#!/bin/sh'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Frontend bauen
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
