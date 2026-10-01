@@ -2483,8 +2483,42 @@ def api_ai_analyze():
     d = request.json or {}
     question = (d.get('question') or '').strip()
     host_key = d.get('host_key') or None
-    if not question:
+    conv = d.get('conversation') or None
+    execute = bool(d.get('execute'))
+    if not question and not execute:
         return jsonify({'ok': False, 'error': 'Frage fehlt'})
+    if ai_provider() == 'agy':
+        if not agy_available():
+            return jsonify({'ok': False, 'error': f'Antigravity (agy) nicht gefunden unter {AGY_BIN}'})
+        user = session.get('username', '?')
+        if execute:
+            if session.get('role', 'admin') != 'admin':
+                return jsonify({'ok': False, 'error': 'Nur Admins dürfen ausführen lassen'}), 403
+            if not conv:
+                return jsonify({'ok': False, 'error': 'Ausführen geht nur in einem bestehenden Gespräch'}), 400
+            question = question or ('Freigegeben. Fuehre den vorgeschlagenen Plan jetzt aus. Berichte danach genau, '
+                                    'was du geaendert hast und wie man es rueckgaengig macht.')
+            prompt = question
+        elif conv:
+            prompt = question
+        else:
+            ctx = _build_ai_context(host_key)
+            hn = (STATIC_HOSTS.get(host_key) or (host_key,))[0] if host_key else ''
+            prompt = _AGY_FIRST_PROMPT.format(brand=BRAND, ctx=ctx[:6000], q=question,
+                                              host=f' zu Host {hn}' if hn else '')
+        if _agy_lock.locked():
+            return jsonify({'ok': False, 'error': 'Antigravity arbeitet gerade an einer anderen Anfrage – bitte kurz warten'}), 409
+        try:
+            r = _agy_run(prompt, conv, execute=execute)
+        except subprocess.TimeoutExpired:
+            return jsonify({'ok': False, 'error': 'Zeitüberschreitung – Antigravity hat nicht rechtzeitig geantwortet'})
+        conv = r.get('conversation_id') or conv
+        mode = 'execute' if execute else 'plan'
+        _ai_log(conv, 'user', mode, question, user, host_key)
+        _ai_log(conv, 'assistant', mode, r.get('answer') or f"Fehler: {r.get('error')}", user, host_key)
+        _audit_user('ai_execute' if execute else 'ai_analyze', host_key or '', question[:80])
+        return jsonify({'ok': r['ok'], 'answer': r.get('answer'), 'error': r.get('error'), 'model': 'Antigravity',
+                        'conversation_id': conv, 'mode': mode, 'host_key': host_key})
     if not LITELLM_KEY:
         return jsonify({'ok': False, 'error': 'LITELLM_KEY nicht gesetzt'})
     ctx = _build_ai_context(host_key)
@@ -2499,7 +2533,7 @@ def api_ai_analyze():
     _audit_user('ai_analyze', host_key or '', question[:80])
     try:
         answer = _llm_chat(messages) or '(keine Antwort vom Modell — evtl. Token-Limit)'
-        return jsonify({'ok': True, 'answer': answer, 'model': 'gemini-flash', 'host_key': host_key})
+        return jsonify({'ok': True, 'answer': answer, 'model': LLM_MODEL or 'LiteLLM', 'host_key': host_key})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
 
@@ -3764,7 +3798,8 @@ def api_connect():
             'unifi':   bool(UNIFI_URL and UNIFI_USER),
             'prometheus': bool(PROMETHEUS), 'loki': bool(LOKI_URL), 'grafana': bool(GRAFANA_URL),
             'dokploy': bool(DOKPLOY_URL and DOKPLOY_KEY), 'coolify': bool(COOLIFY_URL and COOLIFY_KEY),
-            'litellm': bool(LITELLM_URL and LITELLM_KEY), 'telegram': bool(TELEGRAM_TOKEN),
+            'litellm': bool(LITELLM_URL and LITELLM_KEY), 'ai': ai_ready(), 'ai_provider': ai_provider(),
+            'telegram': bool(TELEGRAM_TOKEN),
         },
     })
 
@@ -3868,8 +3903,9 @@ CONFIG_FIELDS = [
         ('UNIFI_USER', 'Benutzer', False, ''),
         ('UNIFI_PASS', 'Passwort', True, ''),
     ]),
-    ('KI (LiteLLM / OpenAI-kompatibel)', [
-        ('LITELLM_URL', 'Adresse', False, 'http://10.0.0.20:4000'),
+    ('KI', [
+        ('AI_PROVIDER', 'Anbieter: agy (Antigravity) oder litellm', False, 'agy'),
+        ('LITELLM_URL', 'LiteLLM-Adresse (nur bei litellm)', False, 'http://10.0.0.20:4000'),
         ('LITELLM_KEY', 'API-Key', True, ''),
         ('LLM_MODEL', 'Modell (leer = erstes verfügbares)', False, ''),
     ]),
@@ -4076,6 +4112,89 @@ def api_pve_info(vmid):
     bk = (_px(f'/nodes/{PROXMOX_NODE}/tasks?typefilter=vzdump&vmid={vmid}&limit=5') or {}).get('data') or []
     return jsonify({'onboot': bool(int(cfg.get('onboot', 0) or 0)),
                     'backups': [{'start': t.get('starttime'), 'status': t.get('status')} for t in bk]})
+
+# ─── KI-ASSISTENT: Antigravity CLI (agy) ─────────────────────────────────
+# Jede Frage laeuft zuerst im Plan-Modus (nur lesen und vorschlagen). Ausgefuehrt wird erst,
+# wenn ein Admin im Gespraech auf "Ausfuehren" klickt. Alles wird im Protokoll festgehalten.
+AGY_BIN     = os.environ.get('AGY_BIN', '/usr/local/bin/agy')
+AGY_WORKDIR = os.environ.get('AGY_WORKDIR', '/root/admin')
+AGY_HOME    = os.environ.get('AGY_HOME', '/root')
+AGY_TIMEOUT = int(os.environ.get('AGY_TIMEOUT', '600'))
+_agy_lock = threading.Lock()
+
+def agy_available():
+    return os.path.exists(AGY_BIN)
+
+def ai_provider():
+    p = os.environ.get('AI_PROVIDER', '').strip().lower()
+    if p in ('agy', 'litellm'):
+        return p
+    return 'agy' if agy_available() else 'litellm'
+
+def ai_ready():
+    return agy_available() if ai_provider() == 'agy' else bool(LITELLM_URL and LITELLM_KEY)
+
+def _agy_run(prompt, conversation=None, execute=False, timeout=None):
+    # Ein Turn von agy. execute=False -> Plan-Modus (keine Aenderungen).
+    t = timeout or AGY_TIMEOUT
+    cmd = [AGY_BIN, '-p', prompt, '--output-format', 'json', '--print-timeout', f'{t}s']
+    cmd += ['--dangerously-skip-permissions'] if execute else ['--mode', 'plan']
+    if conversation:
+        cmd += ['--conversation', conversation]
+    env = dict(os.environ, HOME=AGY_HOME, PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin')
+    os.makedirs(AGY_WORKDIR, exist_ok=True)
+    with _agy_lock:
+        r = subprocess.run(cmd, cwd=AGY_WORKDIR, env=env, capture_output=True, text=True, timeout=t + 30)
+    try:
+        d = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        return {'ok': False, 'error': (r.stderr or r.stdout or 'keine Ausgabe von agy')[-500:]}
+    ok = d.get('status') == 'SUCCESS'
+    return {'ok': ok, 'answer': d.get('response', ''), 'conversation_id': d.get('conversation_id'),
+            'duration': d.get('duration_seconds'), 'error': None if ok else d.get('status')}
+
+def _ai_db():
+    conn = sqlite3.connect(AUDIT_DB)
+    conn.execute('''CREATE TABLE IF NOT EXISTS ai_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, conversation TEXT, role TEXT, mode TEXT,
+        text TEXT, user TEXT, host_key TEXT, ts INTEGER)''')
+    conn.commit()
+    return conn
+
+def _ai_log(conv, role, mode, text, user, host_key=None):
+    conn = _ai_db()
+    conn.execute('INSERT INTO ai_messages (conversation,role,mode,text,user,host_key,ts) VALUES (?,?,?,?,?,?,?)',
+                 (conv, role, mode, text, user, host_key, int(time.time())))
+    conn.commit(); conn.close()
+
+_AGY_FIRST_PROMPT = (
+    'Du arbeitest im {brand} (RRM) auf diesem Container. Lies bei Bedarf AGENTS.md in deinem Arbeitsordner. '
+    'Aktueller Kurzstatus aus dem Dashboard:\n{ctx}\n\n'
+    'Antworte auf Deutsch, knapp und konkret. Wenn eine Aenderung noetig ist, beschreibe sie als '
+    'nummerierten Plan (was, wo, Risiko, wie rueckgaengig). Fuehre im Plan-Modus nichts aus.\n\n'
+    'FRAGE{host}: {q}'
+)
+
+@app.route('/api/ai/status')
+@login_required
+def api_ai_status():
+    return jsonify({'provider': ai_provider(), 'ready': ai_ready(), 'agy': agy_available(),
+                    'busy': _agy_lock.locked()})
+
+@app.route('/api/ai/conversations')
+@login_required
+def api_ai_conversations():
+    conv = request.args.get('id', '')
+    conn = _ai_db()
+    if conv:
+        rows = conn.execute('SELECT role,mode,text,user,ts FROM ai_messages WHERE conversation=? ORDER BY id', (conv,)).fetchall()
+        conn.close()
+        return jsonify([{'role': r[0], 'mode': r[1], 'text': r[2], 'user': r[3], 'ts': r[4]} for r in rows])
+    rows = conn.execute('''SELECT conversation, MAX(ts),
+        (SELECT text FROM ai_messages m2 WHERE m2.conversation=m.conversation AND role='user' ORDER BY id LIMIT 1)
+        FROM ai_messages m WHERE conversation IS NOT NULL GROUP BY conversation ORDER BY MAX(ts) DESC LIMIT 30''').fetchall()
+    conn.close()
+    return jsonify([{'id': r[0], 'last': r[1], 'title': (r[2] or '')[:90]} for r in rows])
 
 # ─── SSO (OpenID Connect: Authentik, Keycloak, Entra ID, Google, …) ───────
 OIDC_ISSUER        = os.environ.get('OIDC_ISSUER', '').rstrip('/')

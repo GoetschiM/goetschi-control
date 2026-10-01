@@ -101,7 +101,7 @@ function AskBar({ problems }) {
   const go = useNavigate()
   const [q, setQ] = useState('')
   const [ki, setKi] = useState(null)
-  useEffect(() => { getJSON('/api/connect').then(c => setKi(!!c.integrations.litellm)).catch(() => setKi(false)) }, [])
+  useEffect(() => { getJSON('/api/connect').then(c => setKi(!!c.integrations.ai)).catch(() => setKi(false)) }, [])
   const quick = [
     problems ? 'Was ist gerade gestört und was soll ich tun?' : 'Ist alles in Ordnung? Fasse den Zustand kurz zusammen.',
     'Welche Hosts sind am stärksten ausgelastet und warum?',
@@ -121,7 +121,7 @@ function AskBar({ problems }) {
         <button className="btn" type="submit" disabled={!q.trim()}>{ki === false ? 'KI einrichten' : 'Fragen'}</button>
       </form>
       {ki === false
-        ? <div className="muted small">Die KI ist noch nicht eingerichtet: unter <Link to="/settings" style={{ color: 'var(--accent)' }}>Einstellungen › KI</Link> Adresse und API-Key eintragen.</div>
+        ? <div className="muted small">Die KI ist noch nicht eingerichtet: unter <Link to="/settings" style={{ color: 'var(--accent)' }}>Einstellungen › KI</Link> einrichten.</div>
         : <div className="askbar-quick">{quick.map(x => <button key={x} className="chip" onClick={() => ask(x)}>{x}</button>)}</div>}
     </div>
   )

@@ -25,6 +25,7 @@ import Palette from './Palette.jsx'
 const NAV = [
   { section: 'Überwachen', items: [
     { to: '/', ico: '▦', label: 'Übersicht', end: true },
+    { to: '/analyze', ico: '✦', label: 'KI-Assistent' },
     { to: '/alerts', ico: '◬', label: 'Alarme', badge: 'alerts' },
     { to: '/board', ico: '◰', label: 'Dienste' },
     { to: '/topology', ico: '⤳', label: 'Topologie' },
@@ -36,7 +37,6 @@ const NAV = [
     { to: '/tasks', ico: '◴', label: 'Aufgaben' },
     { to: '/automate', ico: '⚡', label: 'Automationen' },
     { to: '/maintenance', ico: '◷', label: 'Wartung' },
-    { to: '/analyze', ico: '✦', label: 'KI-Analyse' },
   ] },
   { section: 'Verwaltung', items: [
     { to: '/connect', ico: '⊕', label: 'Hosts & Agenten' },
@@ -154,7 +154,7 @@ function titleFor(path) {
   if (path.startsWith('/topology')) return 'Topologie'
   if (path.startsWith('/metrics')) return 'Metriken'
   if (path.startsWith('/inventory')) return 'Inventar'
-  if (path.startsWith('/analyze')) return 'KI-Analyse'
+  if (path.startsWith('/analyze')) return 'KI-Assistent'
   if (path.startsWith('/automate')) return 'Automationen'
   if (path.startsWith('/tasks')) return 'Aufgaben'
   if (path.startsWith('/ansible')) return 'Befehle'
