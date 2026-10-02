@@ -3887,6 +3887,7 @@ def api_scan():
 CONFIG_FIELDS = [
     ('Allgemein', [
         ('BRAND_NAME', 'Anzeigename', False, 'z.B. Goetschi Control'),
+        ('BRAND_SHORT', 'Kurzname unter dem App-Icon (max. 15 Zeichen)', False, 'Control'),
         ('DASHBOARD_URL', 'Adresse des Dashboards', False, 'http://10.0.0.5:8181'),
     ]),
     ('Telegram-Alarme', [
@@ -4429,7 +4430,8 @@ _ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', '
 @app.route('/manifest.webmanifest')
 def pwa_manifest():
     m = {
-        'id': '/', 'name': BRAND, 'short_name': BRAND[:12],
+        'id': '/', 'name': BRAND,
+        'short_name': os.environ.get('BRAND_SHORT') or (BRAND if len(BRAND) <= 15 else BRAND.split()[0][:15]),
         'description': 'Überwachung und Steuerung deiner Infrastruktur',
         'start_url': '/', 'scope': '/', 'display': 'standalone', 'orientation': 'any',
         'background_color': '#0b0e14', 'theme_color': '#0b0e14', 'lang': 'de',
