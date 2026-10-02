@@ -483,3 +483,11 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg-elev-2); b
 .run-row summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; flex-wrap: wrap; }
 .run-row summary::-webkit-details-marker { display: none; }
 .warn-box { border-color: rgba(247,185,85,.5); }
+
+/* ---- App-Icon und Installation ---- */
+.brand-icon { width: 24px; height: 24px; border-radius: 6px; display: block; flex: 0 0 24px; }
+.sidebar .foot { display: flex; flex-direction: column; gap: 10px; }
+.install-btn { background: none; border: 1px solid var(--line); color: var(--text); border-radius: var(--radius-sm);
+  padding: 8px 10px; font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.install-btn:hover { border-color: var(--accent); }
+@media (min-width: 821px) { .app.collapsed .install-btn { display: none; } }

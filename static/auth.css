@@ -20,7 +20,7 @@ body {
 .auth { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 32px; }
 .auth-head { display: flex; flex-direction: column; gap: 6px; }
 .auth-brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17px; letter-spacing: .1px; }
-.auth-brand::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.auth-brand img { width: 28px; height: 28px; border-radius: 7px; display: block; }
 .auth-title { font-size: 24px; font-weight: 600; margin: 18px 0 0; letter-spacing: -.2px; }
 .auth-sub { color: var(--text-dim); margin: 0; }
 

@@ -56,6 +56,19 @@ export default function App() {
   const [me, setMe] = useState(null)
   const [alertCount, setAlertCount] = useState(0)
   const [palette, setPalette] = useState(false)
+  const [canInstall, setCanInstall] = useState(!!window.__rrmInstall)
+  useEffect(() => {
+    const f = () => setCanInstall(!!window.__rrmInstall)
+    window.addEventListener('rrm-installable', f)
+    return () => window.removeEventListener('rrm-installable', f)
+  }, [])
+  useEffect(() => { if (me?.brand) document.title = me.brand }, [me])
+  async function install() {
+    const e = window.__rrmInstall
+    if (!e) return
+    e.prompt()
+    try { await e.userChoice } finally { window.__rrmInstall = null; setCanInstall(false) }
+  }
   const loc = useLocation()
 
   useEffect(() => { getJSON('/api/me').then(setMe).catch(() => {}) }, [])
@@ -86,7 +99,7 @@ export default function App() {
     <div className={`app ${navOpen ? 'nav-open' : ''} ${collapsed ? 'collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
-          <span className="dot" /> <span className="brand-label">{me?.brand || 'RRM'}</span>
+          <img className="brand-icon" src="/static/icons/icon.svg" alt="" width="24" height="24" /> <span className="brand-label">{me?.brand || 'RRM'}</span>
           <button className="collapse-btn" onClick={toggleCollapsed} title="Menü ein-/ausklappen">‹</button>
         </div>
         <nav className="nav" onClick={() => setNavOpen(false)}>
@@ -103,7 +116,10 @@ export default function App() {
             </div>
           ))}
         </nav>
-        <div className="foot">{me?.brand || 'RRM'} · v0.5</div>
+        <div className="foot">
+          {canInstall && <button className="install-btn" onClick={install} title="Als App auf diesem Gerät installieren">App installieren</button>}
+          <span className="foot-ver">{me?.brand || 'RRM'} · v0.6</span>
+        </div>
       </aside>
       <div className="scrim" onClick={() => setNavOpen(false)} />
 

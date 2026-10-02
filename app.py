@@ -4423,6 +4423,50 @@ def api_monitor_run(mid):
     threading.Thread(target=run_monitor, args=(mid, True), daemon=True).start()
     return jsonify({'ok': True})
 
+# ─── INSTALLIERBARE APP (PWA): Manifest, Service Worker, Icons ───────────
+_ICON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'icons')
+
+@app.route('/manifest.webmanifest')
+def pwa_manifest():
+    m = {
+        'id': '/', 'name': BRAND, 'short_name': BRAND[:12],
+        'description': 'Überwachung und Steuerung deiner Infrastruktur',
+        'start_url': '/', 'scope': '/', 'display': 'standalone', 'orientation': 'any',
+        'background_color': '#0b0e14', 'theme_color': '#0b0e14', 'lang': 'de',
+        'categories': ['utilities', 'productivity'],
+        'icons': [
+            {'src': '/static/icons/icon-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any'},
+            {'src': '/static/icons/icon-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
+            {'src': '/static/icons/icon-maskable-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'maskable'},
+            {'src': '/static/icons/icon-maskable-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'},
+            {'src': '/static/icons/icon.svg', 'sizes': 'any', 'type': 'image/svg+xml', 'purpose': 'any'},
+        ],
+        'shortcuts': [
+            {'name': 'KI-Assistent', 'url': '/#/analyze', 'icons': [{'src': '/static/icons/icon-192.png', 'sizes': '192x192'}]},
+            {'name': 'Alarme', 'url': '/#/alerts', 'icons': [{'src': '/static/icons/icon-192.png', 'sizes': '192x192'}]},
+        ],
+    }
+    resp = app.response_class(json.dumps(m, ensure_ascii=False), mimetype='application/manifest+json')
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+@app.route('/sw.js')
+def pwa_service_worker():
+    # Vom Wurzelpfad ausgeliefert, damit der Service Worker die ganze App abdeckt.
+    resp = send_from_directory(app.static_folder, 'sw.js', mimetype='application/javascript')
+    resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['Service-Worker-Allowed'] = '/'
+    return resp
+
+@app.route('/favicon.ico')
+def pwa_favicon():
+    return send_from_directory(_ICON_DIR, 'favicon.ico', mimetype='image/x-icon', max_age=86400)
+
+@app.route('/apple-touch-icon.png')
+@app.route('/apple-touch-icon-precomposed.png')
+def pwa_apple_icon():
+    return send_from_directory(_ICON_DIR, 'apple-touch-icon.png', mimetype='image/png', max_age=86400)
+
 # ─── SSO (OpenID Connect: Authentik, Keycloak, Entra ID, Google, …) ───────
 OIDC_ISSUER        = os.environ.get('OIDC_ISSUER', '').rstrip('/')
 OIDC_CLIENT_ID     = os.environ.get('OIDC_CLIENT_ID', '')

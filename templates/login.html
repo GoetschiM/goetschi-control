@@ -6,11 +6,20 @@
   <meta name="color-scheme" content="dark light">
   <title>Anmelden · {{ brand }}</title>
   <link rel="stylesheet" href="/static/auth.css">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0b0e14">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ brand }}">
 </head>
 <body>
   <main class="auth">
     <header class="auth-head">
-      <div class="auth-brand">{{ brand }}</div>
+      <div class="auth-brand"><img src="/static/icons/icon.svg" alt="" width="28" height="28">{{ brand }}</div>
       {% if mfa %}
       <h1 class="auth-title">Bestätigung</h1>
       <p class="auth-sub">Gib den 6-stelligen Code aus deiner Authenticator-App ein.</p>
@@ -49,7 +58,7 @@
           </div>
           <div class="hint" id="caps" hidden>Feststelltaste ist aktiv.</div>
         </div>
-        <button type="submit" class="btn" id="submit">Anmelden</button>
+        <button type="submit" class="btn">Anmelden</button>
         {% endif %}
       {% endif %}
     </form>

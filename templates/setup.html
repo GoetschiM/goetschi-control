@@ -6,11 +6,20 @@
   <meta name="color-scheme" content="dark light">
   <title>Einrichtung · {{ brand }}</title>
   <link rel="stylesheet" href="/static/auth.css">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/static/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0b0e14">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ brand }}">
 </head>
 <body>
   <main class="auth">
     <header class="auth-head">
-      <div class="auth-brand">{{ brand }}</div>
+      <div class="auth-brand"><img src="/static/icons/icon.svg" alt="" width="28" height="28">{{ brand }}</div>
       <h1 class="auth-title">Willkommen</h1>
       <p class="auth-sub">Lege das Administrator-Konto an. Danach verbindest du Hosts, Proxmox und weitere Dienste Schritt für Schritt.</p>
     </header>
@@ -34,7 +43,7 @@
         <input type="password" id="password2" name="password2" minlength="10" required autocomplete="new-password">
         <div class="hint" id="mismatch" hidden>Die Passwörter stimmen nicht überein.</div>
       </div>
-      <button type="submit" class="btn" id="submit">Konto anlegen</button>
+      <button type="submit" class="btn" id="auth-submit">Konto anlegen</button>
     </form>
 
     <footer class="auth-foot">Diese Seite erscheint nur, solange noch kein Konto existiert.</footer>
@@ -52,7 +61,7 @@
       });
       function check() { mm.hidden = !pw2.value || pw.value === pw2.value; }
       pw.addEventListener('input', check); pw2.addEventListener('input', check);
-      var f = document.getElementById('auth-form'), b = document.getElementById('submit');
+      var f = document.getElementById('auth-form'), b = document.getElementById("auth-submit");
       f.addEventListener('submit', function (e) {
         if (pw.value !== pw2.value) { e.preventDefault(); mm.hidden = false; pw2.focus(); return; }
         b.disabled = true; b.textContent = 'Einen Moment …';
